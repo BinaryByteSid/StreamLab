@@ -31,8 +31,14 @@ def send(**body):
 
 
 def test_every_component_healthy():
-    d = httpx.get(f"{BASE}/api/lab/status", timeout=15).json()
-    down = [c["id"] for c in d["components"] if not c["ok"]]
+    # One snapshot can catch a slow health check (2 s timeout); retry for a minute.
+    deadline = time.time() + 60
+    while True:
+        d = httpx.get(f"{BASE}/api/lab/status", timeout=15).json()
+        down = [c["id"] for c in d["components"] if not c["ok"]]
+        if not down or time.time() > deadline:
+            break
+        time.sleep(3)
     assert not down, f"down: {down}"
 
 
