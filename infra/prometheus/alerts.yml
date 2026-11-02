@@ -1,0 +1,67 @@
+# Thresholds read "swma_config_*" are exported by the processor from the Control Plane (Consul),
+# so changing them on the lab's Control Plane page changes these alerts live.
+groups:
+  - name: streamlab
+    rules:
+      - alert: HighServiceLatency
+        expr: swma_window_avg_latency_ms{window_type="sliding"} > scalar(swma_config_alert_latency_ms)
+        for: 10s
+        labels: {severity: warning, section: "12"}
+        annotations:
+          summary: '{{ $labels.service }} average latency {{ $value | printf "%.0f" }} ms'
+          description: The latest 60s sliding window average is above the threshold set in the Control Plane.
+      - alert: HighErrorRate
+        expr: swma_window_error_rate{window_type="sliding"} > scalar(swma_config_alert_error_rate_pct)
+        for: 10s
+        labels: {severity: critical, section: "12"}
+        annotations:
+          summary: '{{ $labels.service }} error rate {{ $value | printf "%.1f" }}%'
+          description: More 5xx responses than the threshold set in the Control Plane.
+      - alert: HighConsumerLag
+        expr: swma_group_lag_total > scalar(swma_config_alert_consumer_lag)
+        for: 15s
+        labels: {severity: warning, section: "11"}
+        annotations:
+          summary: 'Consumer lag is {{ $value }} events'
+          description: The processors are falling behind the producer (backpressure). Add workers or reduce work.
+      - alert: ProcessorWorkerDown
+        expr: swma_workers_alive < swma_workers_desired
+        for: 10s
+        labels: {severity: critical, section: "3"}
+        annotations:
+          summary: 'Only {{ $value }} processor workers alive, fewer than desired'
+          description: A worker crashed. Its partitions are moved to the other workers.
+      - alert: DeadLetterSpike
+        expr: sum(rate(swma_processor_dlq_total[1m])) > 0.5
+        for: 10s
+        labels: {severity: warning, section: "3"}
+        annotations:
+          summary: '{{ $value | printf "%.1f" }} events/s sent to the dead letter queue'
+          description: Invalid or too-late events are arriving.
+      - alert: HighProcessingLatency
+        expr: histogram_quantile(0.95, sum(rate(swma_processing_latency_seconds_bucket[1m])) by (le)) > 2
+        for: 15s
+        labels: {severity: warning, section: "12"}
+        annotations:
+          summary: 'p95 processing latency {{ $value | printf "%.1f" }}s'
+          description: Events wait too long between Kafka and the processor.
+      - alert: KafkaBrokerDown
+        expr: up{job="redpanda"} == 0
+        for: 10s
+        labels: {severity: critical, section: "2"}
+        annotations:
+          summary: 'Kafka broker {{ $labels.instance }} is down'
+          description: Partitions it led elect a new leader from the in-sync replicas.
+      - alert: ServiceDown
+        expr: up{job=~"producer|processor|api|redis"} == 0
+        for: 15s
+        labels: {severity: critical}
+        annotations:
+          summary: '{{ $labels.job }} ({{ $labels.instance }}) is down'
+          description: Prometheus cannot scrape it.
+      - alert: ApiRateLimiting
+        expr: sum(rate(swma_api_rate_limited_total[1m])) > 0
+        labels: {severity: info, section: "4"}
+        annotations:
+          summary: API clients are being rate limited
+          description: Some requests got HTTP 429.

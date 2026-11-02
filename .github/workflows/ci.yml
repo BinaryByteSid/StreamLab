@@ -1,0 +1,68 @@
+# CI: the same stages the lab runs locally (Experiment 12), on GitHub.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Build & unit tests
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: services}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: services/requirements.txt}
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/unit -q
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install bandit==1.9.4
+      - name: bandit (fails on HIGH severity)
+        run: bandit -r services/swma --severity-level high
+      - name: Trivy filesystem scan (dependencies)
+        uses: aquasecurity/trivy-action@0.28.0
+        with: {scan-type: fs, scan-ref: services, severity: "CRITICAL,HIGH", exit-code: "0"}
+
+  e2e:
+    name: Integration tests (full stack)
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+      - name: Wait for the lab
+        run: for i in $(seq 1 90); do curl -fs localhost:8080/api/health && break; sleep 3; done
+      - run: docker compose exec -T -e STREAMLAB_E2E=1 api-1 python -m pytest tests/e2e -q
+      - if: failure()
+        run: docker compose logs --tail 80
+      - run: docker compose down -v
+
+  images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    strategy:
+      matrix:
+        include:
+          - {name: producer, context: services, target: producer}
+          - {name: processor, context: services, target: processor}
+          - {name: api, context: services, target: api}
+          - {name: ops-agent, context: services, target: ops-agent}
+          - {name: dashboard, context: portal, target: ""}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: false
+          tags: swma/${{ matrix.name }}:${{ github.sha }}

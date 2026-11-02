@@ -1,0 +1,38 @@
+# CD: push images to Amazon ECR and roll them out on the EC2 host.
+# Needs repository secrets: AWS_ROLE_ARN (OIDC role), AWS_REGION, EC2_INSTANCE_ID.
+# Runs only when started by hand, so nothing is deployed by accident.
+name: cd
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  push-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push images (tag = commit)
+        env:
+          REG: ${{ steps.ecr.outputs.registry }}
+        run: |
+          for t in producer processor api ops-agent; do
+            docker build --target $t -t $REG/swma/$t:${GITHUB_SHA::7} services
+            docker push $REG/swma/$t:${GITHUB_SHA::7}
+          done
+          docker build -t $REG/swma/dashboard:${GITHUB_SHA::7} portal
+          docker push $REG/swma/dashboard:${GITHUB_SHA::7}
+      - name: Rolling deploy on EC2 through SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --parameters commands='["cd /opt/streamlab && git pull && docker compose up -d --build --no-deps api-1 && sleep 20 && docker compose up -d --build"]'

@@ -1,0 +1,308 @@
+# StreamLab - Streaming Window Metrics Aggregator, virtual lab edition.
+# Every block in the architecture diagram is a real container below.
+# Start:  docker compose up -d --build      (or double-click START-LAB.bat)
+# Open:   http://localhost:8080
+name: swma-lab
+
+x-python: &python
+  restart: unless-stopped
+  environment: &pyenv
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:-streamlab}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:-streamlab-secret}
+    OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN:-streamlab-internal}
+    LAB_ADMIN_USER: ${LAB_ADMIN_USER:-admin}
+    LAB_ADMIN_PASSWORD: ${LAB_ADMIN_PASSWORD:-streamlab}
+    LAB_API_KEYS: ${LAB_API_KEYS:-lab-public-key}
+    JWT_SECRET: ${JWT_SECRET:-change-me-local-lab-only}
+  depends_on:
+    bootstrap: {condition: service_completed_successfully}
+
+x-redpanda: &redpanda
+  image: redpandadata/redpanda:v25.1.9
+  restart: unless-stopped
+  labels: {swma.section: "2", swma.role: "Kafka broker", swma.chaos: "true"}
+  healthcheck:
+    test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 20
+
+services:
+  # ---------------------------------------------------------------- 2. Message broker
+  redpanda-0:
+    <<: *redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:29092
+      - --advertise-kafka-addr=internal://redpanda-0:9092,external://localhost:29092
+      - --schema-registry-addr=internal://0.0.0.0:8081,external://0.0.0.0:28081
+      - --rpc-addr=redpanda-0:33145
+      - --advertise-rpc-addr=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=600M
+      - --reserve-memory=0M
+      - --default-log-level=warn
+    ports: ["127.0.0.1:29092:29092", "127.0.0.1:28081:28081"]
+    volumes: [redpanda0:/var/lib/redpanda/data]
+
+  redpanda-1:
+    <<: *redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:29093
+      - --advertise-kafka-addr=internal://redpanda-1:9092,external://localhost:29093
+      - --rpc-addr=redpanda-1:33145
+      - --advertise-rpc-addr=redpanda-1:33145
+      - --seeds=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=600M
+      - --reserve-memory=0M
+      - --default-log-level=warn
+    ports: ["127.0.0.1:29093:29093"]
+    volumes: [redpanda1:/var/lib/redpanda/data]
+    depends_on: [redpanda-0]
+
+  redpanda-2:
+    <<: *redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:29094
+      - --advertise-kafka-addr=internal://redpanda-2:9092,external://localhost:29094
+      - --rpc-addr=redpanda-2:33145
+      - --advertise-rpc-addr=redpanda-2:33145
+      - --seeds=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=600M
+      - --reserve-memory=0M
+      - --default-log-level=warn
+    ports: ["127.0.0.1:29094:29094"]
+    volumes: [redpanda2:/var/lib/redpanda/data]
+    depends_on: [redpanda-0]
+
+  redpanda-console:
+    image: redpandadata/console:v3.13.1
+    restart: unless-stopped
+    environment: {CONFIG_FILEPATH: /etc/console/config.yml}
+    volumes: ["./infra/console/config.yml:/etc/console/config.yml:ro"]
+    ports: ["127.0.0.1:8081:8080"]
+    labels: {swma.section: "2", swma.role: "Kafka UI"}
+    depends_on: [redpanda-0]
+
+  # ------------------------------------------------------- 6. Control plane
+  consul:
+    image: hashicorp/consul:2.1.0
+    restart: unless-stopped
+    command: ["consul", "agent", "-server", "-bootstrap-expect=1", "-ui", "-client=0.0.0.0",
+              "-node=streamlab", "-data-dir=/consul/data", "-config-dir=/etc/consul.d"]
+    volumes: ["consul:/consul/data", "./infra/consul:/etc/consul.d:ro"]
+    ports: ["127.0.0.1:8500:8500"]
+    labels: {swma.section: "6", swma.role: "Config DB + service registry", swma.chaos: "true"}
+
+  # ------------------------------------------------- 4 / 9. Storage
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes: [redis:/data]
+    labels: {swma.section: "4", swma.role: "In-memory metrics store", swma.chaos: "true"}
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10}
+
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    restart: unless-stopped
+    environment:
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: StreamLab metrics store
+    volumes: [redisinsight:/data]
+    ports: ["127.0.0.1:5540:5540"]
+    labels: {swma.section: "4", swma.role: "Redis UI"}
+
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-streamlab}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-streamlab-secret}
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    volumes: [s3data:/data]
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    labels: {swma.section: "9", swma.role: "S3 object storage (backups, archive, logs)"}
+
+  # --------------------------------------------------------- one-shot setup
+  bootstrap:
+    image: swma-lab/api:dev   # built by api-1
+    pull_policy: never
+    command: ["python", "-m", "swma.bootstrap"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-streamlab}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-streamlab-secret}
+    restart: "no"
+    depends_on: [redpanda-0, redpanda-1, redpanda-2, consul, rustfs, redis]
+
+  # ------------------------------------------------------ 1. Event sources
+  producer:
+    <<: *python
+    build: {context: ./services, target: producer}
+    image: swma-lab/producer:dev
+    environment: {<<: *pyenv, SWMA_SERVICE: producer}
+    labels: {swma.section: "1", swma.role: "Simulated microservices (event producer)", swma.chaos: "true"}
+
+  # ----------------------------------------------- 3. Stream processing engine
+  processor:
+    <<: *python
+    build: {context: ./services, target: processor}
+    image: swma-lab/processor:dev
+    environment: {<<: *pyenv, SWMA_SERVICE: processor}
+    volumes: [state:/state]
+    stop_grace_period: 30s
+    labels: {swma.section: "3", swma.role: "Stream processor (supervisor + 1-4 workers)", swma.chaos: "true"}
+
+  # ------------------------------------------------------- 4. FastAPI backend
+  api-1:
+    <<: *python
+    build: {context: ./services, target: api}
+    image: swma-lab/api:dev
+    environment: {<<: *pyenv, SWMA_SERVICE: api, SWMA_INSTANCE: api-1}
+    labels: {swma.section: "4", swma.role: "FastAPI replica 1", swma.chaos: "true"}
+
+  api-2:
+    <<: *python
+    image: swma-lab/api:dev
+    environment: {<<: *pyenv, SWMA_SERVICE: api, SWMA_INSTANCE: api-2}
+    labels: {swma.section: "4", swma.role: "FastAPI replica 2", swma.chaos: "true"}
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+      api-1: {condition: service_started}
+
+  # ------------------------------------------------- 5. Dashboard + load balancer
+  dashboard:
+    build: {context: ./portal}
+    image: swma-lab/dashboard:dev
+    restart: unless-stopped
+    volumes: ["./portal:/usr/share/nginx/html:ro"]
+    labels: {swma.section: "5", swma.role: "Virtual lab web app"}
+
+  alb:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes: ["./infra/alb/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    ports: ["127.0.0.1:8080:80"]
+    labels: {swma.section: "9", swma.role: "Application load balancer"}
+    depends_on: [dashboard]
+
+  # ---------------------------------------------- 7 / 8. DevOps + registry
+  ops-agent:
+    <<: *python
+    build: {context: ./services, target: ops-agent}
+    image: swma-lab/ops-agent:dev
+    environment:
+      <<: *pyenv
+      SWMA_SERVICE: ops-agent
+      COMPOSE_PROJECT: swma-lab
+      WORKSPACE: /workspace
+      REGISTRY_PUSH_HOST: localhost:5001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace:ro
+    labels: {swma.section: "7", swma.role: "CI/CD runner, chaos and container stats"}
+
+  registry:
+    image: registry:3.1.2
+    restart: unless-stopped
+    environment: {REGISTRY_STORAGE_DELETE_ENABLED: "true"}
+    volumes: [registry:/var/lib/registry]
+    ports: ["127.0.0.1:5001:5000"]
+    labels: {swma.section: "8", swma.role: "Container registry (Docker Hub / ECR)"}
+
+  registry-ui:
+    image: joxit/docker-registry-ui:2.6.0
+    restart: unless-stopped
+    environment:
+      SINGLE_REGISTRY: "true"
+      REGISTRY_TITLE: StreamLab registry (stand-in for Docker Hub / Amazon ECR)
+      NGINX_PROXY_PASS_URL: http://registry:5000
+      DELETE_IMAGES: "true"
+      SHOW_CONTENT_DIGEST: "true"
+    ports: ["127.0.0.1:5080:80"]
+    labels: {swma.section: "8", swma.role: "Registry UI"}
+    depends_on: [registry]
+
+  # ------------------------------------------------ 10. Observability
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=3d",
+              "--web.enable-lifecycle"]
+    volumes: ["./infra/prometheus:/etc/prometheus:ro", "prometheus:/prometheus"]
+    ports: ["127.0.0.1:9091:9090"]
+    labels: {swma.section: "10", swma.role: "Metrics database"}
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes: ["./infra/alertmanager:/etc/alertmanager:ro"]
+    ports: ["127.0.0.1:9093:9093"]
+    labels: {swma.section: "10", swma.role: "Alert routing"}
+
+  grafana:
+    image: grafana/grafana:13.1.7
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-streamlab}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/pipeline.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports: ["127.0.0.1:3001:3000"]
+    labels: {swma.section: "10", swma.role: "Dashboards"}
+
+  loki:
+    image: grafana/loki:3.7.9
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml", "-config.expand-env=true"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-streamlab}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-streamlab-secret}
+    volumes: ["./infra/loki/loki.yml:/etc/loki/loki.yml:ro", "loki:/loki"]
+    ports: ["127.0.0.1:3100:3100"]
+    labels: {swma.section: "10", swma.role: "Log database (chunks in S3)"}
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.96.0-alpine
+    restart: unless-stopped
+    environment: {REDIS_ADDR: "redis://redis:6379"}
+    labels: {swma.section: "10", swma.role: "Redis metrics exporter"}
+
+volumes:
+  redpanda0:
+  redpanda1:
+  redpanda2:
+  consul:
+  redis:
+  redisinsight:
+  s3data:
+  state:
+  registry:
+  prometheus:
+  grafana:
+  loki:

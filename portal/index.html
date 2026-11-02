@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StreamLab Virtual Lab</title>
+  <meta name="description" content="A hands-on virtual lab for the Streaming Window Metrics Aggregator: Kafka, stream processing, windows, Redis, FastAPI, Grafana and more.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e3a8a'/%3E%3Cpath d='M5 21c4 0 4-10 8-10s4 10 8 10 4-6 6-6' stroke='%2393c5fd' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/lab.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <button class="menu-btn" id="menu-btn" aria-label="Open menu" aria-controls="nav">☰</button>
+    <a class="brand" href="#/">
+      <span class="logo" aria-hidden="true"></span>
+      <span><b>StreamLab</b><small>Streaming Window Metrics Aggregator · Virtual Lab</small></span>
+    </a>
+    <div class="top-right">
+      <span class="health" id="health-badge" title="Services healthy">…</span>
+      <span class="ws-state" title="Live connection to the system"><span class="dot"></span><span class="ws-label">live</span></span>
+      <span id="auth-badge"></span>
+    </div>
+  </header>
+  <div class="shell">
+    <nav id="nav" aria-label="Lab sections">
+      <div class="nav-group">Start</div>
+      <a href="#/"><span>🏠</span> Start here</a>
+      <a href="#/architecture"><span>🗺️</span> Architecture map</a>
+      <div class="nav-group">Learn &amp; practise</div>
+      <a href="#/learn" data-prefix="/learn"><span>📘</span> Theory (zero to hero)</a>
+      <a href="#/experiments" data-prefix="/experiments"><span>🧪</span> Experiments</a>
+      <a href="#/event-lab"><span>✉️</span> Send &amp; trace an event</a>
+      <div class="nav-group">The live system</div>
+      <a href="#/dashboard"><span>📊</span> 5 · Live dashboard</a>
+      <a href="#/kafka"><span>🔴</span> 2 · Kafka stream</a>
+      <a href="#/processor"><span>⚙️</span> 3 · Stream processor</a>
+      <a href="#/storage"><span>🗄️</span> 4 · Redis &amp; API</a>
+      <a href="#/control"><span>🎛️</span> 6 · Control plane</a>
+      <a href="#/observability"><span>📈</span> 10 · Observability</a>
+      <a href="#/devops"><span>🚀</span> 7·8 · CI/CD &amp; registry</a>
+      <a href="#/cloud"><span>☁️</span> 9 · AWS deployment</a>
+      <a href="#/resilience"><span>🛡️</span> 11 · Fault tolerance</a>
+      <a href="#/services"><span>🧰</span> All tools &amp; UIs</a>
+      <div class="nav-group">Check yourself</div>
+      <a href="#/quiz"><span>🎓</span> Final quiz</a>
+      <a href="#/glossary"><span>📖</span> Glossary</a>
+    </nav>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <aside id="feed" class="feed" aria-label="What just happened">
+    <button id="feed-toggle" class="feed-toggle" aria-expanded="false">⚡ What just happened <span id="feed-count"></span></button>
+    <div class="feed-body" id="feed-body"><p class="muted">Every crash, rebalance, config change and alert shows up here in plain English.</p></div>
+  </aside>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
