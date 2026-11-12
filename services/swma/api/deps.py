@@ -11,11 +11,11 @@ import redis.asyncio as aioredis
 from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient
 from fastapi import HTTPException, Request
-from minio import Minio
 from prometheus_client import Counter
 
 from swma.common import settings
 from swma.common.config import LiveConfig
+from swma.common.storage import s3_client
 
 RATE_LIMITED = Counter("swma_api_rate_limited_total", "Requests rejected by the rate limiter", ["client"])
 AUTH_FAILURES = Counter("swma_api_auth_failures_total", "Rejected credentials", ["kind"])
@@ -54,7 +54,7 @@ class Clients:
         self.producer = Producer({"bootstrap.servers": settings.KAFKA_BOOTSTRAP, "client.id": f"{settings.INSTANCE}-api",
                                   "acks": "all", "enable.idempotence": True, "linger.ms": 5})
         self.reset_kafka()
-        self.s3 = Minio(settings.S3_ENDPOINT, settings.S3_ACCESS_KEY, settings.S3_SECRET_KEY, secure=False)
+        self.s3 = s3_client()
         self.cfg = LiveConfig().start()
         self.bucket = self.r.register_script(TOKEN_BUCKET)
 

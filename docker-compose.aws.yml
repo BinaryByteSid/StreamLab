@@ -1,0 +1,77 @@
+# AWS overlay: used on the EC2 instance on top of docker-compose.yml
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+# The EC2 user-data script writes the .env file this reads (region, bucket names,
+# generated passwords, public hostname). Credentials come from the instance IAM role.
+
+x-aws-env: &aws-env
+  SWMA_CLOUD: aws
+  AWS_REGION: ${AWS_REGION}
+  S3_ENDPOINT: s3.${AWS_REGION}.amazonaws.com
+  S3_SECURE: "true"
+  S3_REGION: ${AWS_REGION}
+  S3_ACCESS_KEY: ""
+  S3_SECRET_KEY: ""
+  BUCKET_CHECKPOINTS: ${BUCKET_CHECKPOINTS}
+  BUCKET_ARCHIVE: ${BUCKET_ARCHIVE}
+  BUCKET_LOGS: ${BUCKET_LOGS}
+  PUBLIC_LAB_URL: http://${PUBLIC_HOST}
+  PUBLIC_GRAFANA_URL: http://${PUBLIC_HOST}:3000
+  PUBLIC_API_DOCS_URL: http://${PUBLIC_HOST}/api/docs
+  PUBLIC_S3_CONSOLE_URL: https://${AWS_REGION}.console.aws.amazon.com/s3/buckets?region=${AWS_REGION}
+  PUBLIC_LOKI_URL: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#logsV2:live-tail
+  PUBLIC_CLOUDWATCH_URL: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards/dashboard/StreamLab
+
+# Container stdout -> CloudWatch Logs (log group created by Terraform)
+x-awslogs: &awslogs
+  driver: awslogs
+  options:
+    awslogs-region: ${AWS_REGION}
+    awslogs-group: /streamlab/containers
+    tag: "{{.Name}}"
+
+services:
+  bootstrap:
+    environment: *aws-env
+    logging: *awslogs
+  producer:
+    environment: *aws-env
+    logging: *awslogs
+  processor:
+    environment: *aws-env
+    logging: *awslogs
+  api-1:
+    environment: *aws-env
+    logging: *awslogs
+  api-2:
+    environment: *aws-env
+    logging: *awslogs
+  ops-agent:
+    environment: *aws-env
+    logging: *awslogs
+
+  # Public entry points (the security group decides who may reach them)
+  alb:
+    ports: ["0.0.0.0:80:80"]
+  grafana:
+    ports: ["0.0.0.0:3000:3000"]
+    environment:
+      GF_SERVER_ROOT_URL: http://${PUBLIC_HOST}:3000
+
+  # Loki keeps its log chunks in the real Amazon S3 bucket
+  loki:
+    volumes: ["./infra/loki/loki-aws.yml:/etc/loki/loki.yml:ro", "loki:/loki"]
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      BUCKET_LOGS: ${BUCKET_LOGS}
+
+  # Mirrors the stream into CloudWatch Metrics + Logs so it is visible in the AWS console
+  cloudwatch:
+    image: swma-lab/api:dev
+    pull_policy: never
+    command: ["python", "-m", "swma.cloud.cloudwatch"]
+    restart: unless-stopped
+    environment: {<<: *aws-env, SWMA_SERVICE: cloudwatch}
+    logging: *awslogs
+    labels: {swma.section: "10", swma.role: "CloudWatch bridge (metrics + live logs)"}
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}

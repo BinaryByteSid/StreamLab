@@ -14,10 +14,10 @@ import time
 
 import httpx
 from confluent_kafka.admin import AdminClient, NewTopic
-from minio import Minio
 
 from swma.common import config, log as logsetup, settings
 from swma.common.schema import EVENT_SCHEMA, SERVICE_CATALOG
+from swma.common.storage import s3_client
 
 log = logsetup.setup("bootstrap", loki=False)
 
@@ -115,11 +115,12 @@ def consul() -> None:
 
 
 def s3() -> None:
-    client = Minio(settings.S3_ENDPOINT, settings.S3_ACCESS_KEY, settings.S3_SECRET_KEY, secure=False)
-    wait("s3 (rustfs)", lambda: client.list_buckets() is not None)
-    for bucket in (settings.BUCKET_CHECKPOINTS, settings.BUCKET_ARCHIVE, settings.BUCKET_LOGS):
-        if not client.bucket_exists(bucket):
-            client.make_bucket(bucket)
+    client = s3_client()
+    buckets = (settings.BUCKET_CHECKPOINTS, settings.BUCKET_ARCHIVE, settings.BUCKET_LOGS)
+    wait(f"s3 ({settings.S3_ENDPOINT})", lambda: client.bucket_exists(buckets[0]) in (True, False))
+    for bucket in buckets:
+        if not client.bucket_exists(bucket):  # on AWS Terraform has already created them
+            client.make_bucket(bucket, location=settings.S3_REGION) if settings.S3_REGION else client.make_bucket(bucket)
             log.info("created bucket %s", bucket)
 
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from swma.common import settings
+from swma.common.storage import buckets
 
 from .deps import C
 
@@ -78,14 +79,14 @@ async def consul_services():
 async def s3_buckets():
     def go():
         out = []
-        for b in C.s3.list_buckets():
+        for name in buckets().values():  # only our buckets (no ListAllMyBuckets needed on AWS)
             n, size = 0, 0
-            for o in C.s3.list_objects(b.name, recursive=True):
+            for o in C.s3.list_objects(name, recursive=True):
                 n += 1
                 size += o.size or 0
                 if n >= 5000:
                     break
-            out.append({"bucket": b.name, "objects": n, "bytes": size})
+            out.append({"bucket": name, "objects": n, "bytes": size})
         return out
     return await run_in_threadpool(go)
 

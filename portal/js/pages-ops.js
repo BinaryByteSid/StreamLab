@@ -107,18 +107,28 @@ route(/^\/devops$/, async (main, ctx) => {
 
 // ------------------------------------------------------------------ cloud
 route(/^\/cloud$/, async (main) => {
+  const L = await links();
+  const onAws = L.cloud === 'aws';
+  const live = onAws ? `<div class="card" style="border-color:#fdba74;background:#fff7ed"><h2>🟢 This lab is running on AWS right now</h2>
+      <p>The pipeline runs 24/7 on an EC2 instance. The stream is mirrored into Amazon CloudWatch so it can be watched from the AWS console:</p>
+      <div class="row"><a class="btn primary" href="${esc(L.cloudwatch)}" target="_blank" rel="noopener">CloudWatch dashboard ↗</a>
+      <a class="btn" href="${esc(L.loki)}" target="_blank" rel="noopener">CloudWatch Live Tail ↗ <span class="small">(log group /streamlab/stream)</span></a>
+      <a class="btn" href="${esc(L.s3)}" target="_blank" rel="noopener">S3 buckets ↗</a><a class="btn" href="${esc(L.grafana)}" target="_blank" rel="noopener">Grafana ↗</a></div>
+      <p class="small muted">Buckets: ${Object.values(L.buckets || {}).map((b) => `<code>${esc(b)}</code>`).join(' ')}. The AWS console links need the AWS account login.</p></div>` : '';
   const rows = [
     ['nginx (alb)', 'Application Load Balancer', 'Spreads requests over api-1 / api-2, health checks'],
+    ['cloudwatch bridge', 'Amazon CloudWatch Metrics + Logs + Alarms, SNS', 'Stream visible in the AWS console (deployed)'],
     ['producer, processor, api-1/2, dashboard', 'EC2 instances (Auto Scaling Group for processors)', 'Same Docker images, pulled from ECR'],
     ['redpanda-0/1/2', 'Amazon MSK or Redpanda on EC2', '3 brokers across availability zones'],
     ['redis', 'Amazon ElastiCache for Redis', 'Managed, replicated'],
-    ['rustfs (S3)', 'Amazon S3', 'Checkpoint backups, archive, Loki chunks'],
+    ['rustfs (S3)', 'Amazon S3 (deployed)', 'Checkpoint backups, archive, Loki chunks'],
     ['registry', 'Amazon ECR', 'Image registry'],
     ['consul', 'Consul on EC2 or AWS Systems Manager Parameter Store', 'Dynamic config'],
     ['prometheus / grafana / loki', 'Amazon Managed Prometheus / Grafana, or on EC2', 'Observability'],
     ['docker network + published ports', 'VPC, subnets and Security Groups', 'Only 80/443 public; 9092 internal'],
   ];
   main.innerHTML = `${head(9, 'var(--s9)', 'Deployment on AWS', 'Locally every AWS service has a stand-in container, so you can learn the architecture for free. The deploy/aws folder holds Terraform to run the same stack on AWS.')}
+    ${live}
     <div class="card"><h2>Local ↔ AWS mapping</h2><div class="table-wrap"><table><thead><tr><th>In this lab</th><th>On AWS</th><th>Purpose</th></tr></thead><tbody>${rows.map((r) => `<tr><td><code>${esc(r[0])}</code></td><td><b>${esc(r[1])}</b></td><td>${esc(r[2])}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="grid g2">
       <div class="card"><h2>VPC layout</h2><pre><code>VPC 10.0.0.0/16
@@ -130,12 +140,14 @@ route(/^\/cloud$/, async (main) => {
       ├─ MSK / Redpanda 3 brokers   (SG: 9092 from app SG)
       ├─ ElastiCache Redis          (SG: 6379 from app SG)
       └─ S3 (VPC endpoint), ECR</code></pre></div>
-      <div class="card"><h2>Free-tier path (feasibility study)</h2><ol class="small">
-        <li>Create an AWS account and an IAM user with programmatic access.</li>
-        <li><code>cd deploy/aws/terraform</code> → <code>terraform init</code> → <code>terraform apply</code>. Creates a VPC, a security group, an S3 bucket, ECR repositories and one t3.medium EC2 instance (the stack needs about 3 GB of RAM, so t2.micro is too small and this is not free-tier).</li>
-        <li>The instance's user-data installs Docker and runs <code>docker compose up</code> with this repository.</li>
-        <li>Open the ALB / instance URL. Run <code>terraform destroy</code> afterwards to avoid charges.</li></ol>
-        <p class="small muted">Nothing is deployed to AWS from this lab automatically; the CI/CD "deploy" stage performs a rolling restart locally instead.</p></div></div>
+      <div class="card"><h2>Free-plan deployment (what <code>deploy/aws</code> builds)</h2><ol class="small">
+        <li>New AWS account on the <b>Free plan</b> (credits, no charges); open <b>CloudShell</b> in the console.</li>
+        <li><code>git clone</code> this repo → <code>cd deploy/aws/terraform</code> → <code>terraform apply -var="alert_email=…"</code></li>
+        <li>Creates: VPC + security group (ports 80, 3000), <b>EC2 m7i-flex.large</b> (free-plan eligible, 8 GB) with an Elastic IP,
+          3 <b>S3</b> buckets, <b>CloudWatch</b> log groups + dashboard + 3 alarms, <b>SNS</b> e-mail, <b>AWS Budgets</b> alert, IAM role (no keys on the server).</li>
+        <li>The instance installs Docker and starts the lab with <code>docker-compose.aws.yml</code>; the producer streams 24/7.</li>
+        <li><code>terraform destroy</code> removes everything.</li></ol>
+        <p class="small muted">Step-by-step guide: <code>deploy/aws/README.md</code>.</p></div></div>
     <div class="card"><h2>Security groups (firewall rules)</h2><div class="table-wrap"><table><thead><tr><th>Group</th><th>Inbound</th><th>Why</th></tr></thead><tbody>
       <tr><td>alb-sg</td><td>80, 443 from 0.0.0.0/0</td><td>Public entry point</td></tr><tr><td>app-sg</td><td>8000, 80 from alb-sg</td><td>Only the ALB reaches the apps</td></tr>
       <tr><td>kafka-sg</td><td>9092 from app-sg</td><td>Producers and processors only</td></tr><tr><td>redis-sg</td><td>6379 from app-sg</td><td>Never public</td></tr></tbody></table></div></div>`;
@@ -170,12 +182,12 @@ route(/^\/resilience$/, async (main, ctx) => {
     const parts = [0, 1, 2, 3];
     const out = [];
     for (const p of parts) {
-      const objs = await api(`/api/explore/s3/objects?bucket=swma-checkpoints&prefix=partition-${p}/`).catch(() => []);
+      const objs = await api(`/api/explore/s3/objects?bucket=${encodeURIComponent((L.buckets || {}).checkpoints || 'swma-checkpoints')}&prefix=partition-${p}/`).catch(() => []);
       const latest = objs.find((o) => o.key.endsWith('latest.json'));
       out.push(`<tr><td>partition-${p}/latest.json</td><td>${latest ? fmt.bytes(latest.size) : '–'}</td><td>${latest ? fmt.ago(latest.modified) : 'no backup yet'}</td><td>${latest ? `<button class="link" data-o="${esc(latest.key)}">view</button>` : ''}</td></tr>`);
     }
     $('#s3').innerHTML = `<table><tbody>${out.join('')}</tbody></table>`;
-    $('#s3').querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => { const o = await api(`/api/explore/s3/object?bucket=swma-checkpoints&key=${encodeURIComponent(b.dataset.o)}`); const j = o.json || {}; showJson(b.dataset.o, { ...j, items: `${Object.keys(j.items || {}).length} keys (windows, dedup ids, offset)` }); }; });
+    $('#s3').querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => { const o = await api(`/api/explore/s3/object?bucket=${encodeURIComponent((L.buckets || {}).checkpoints || 'swma-checkpoints')}&key=${encodeURIComponent(b.dataset.o)}`); const j = o.json || {}; showJson(b.dataset.o, { ...j, items: `${Object.keys(j.items || {}).length} keys (windows, dedup ids, offset)` }); }; });
   }, 10000);
   const draw = async () => {
     const cs = await api('/api/lab/containers').catch(() => []);
@@ -195,7 +207,7 @@ route(/^\/services$/, async (main, ctx) => {
     ['alertmanager', 'Alertmanager', 10, 'Active alerts and silences.', 'Alerts'],
     ['consul', 'Consul', 6, 'Key/Value (all lab settings) and Services (health of every component).', 'Key/Value → swma → config'],
     ['redisinsight', 'RedisInsight', 4, 'Browse the Redis keys. Accept the terms once, then open "StreamLab metrics store".', 'Browser → metrics:*'],
-    ['s3', 'RustFS (S3) console', 9, 'Buckets for checkpoints, the cold-path archive and Loki log chunks. Login streamlab / streamlab-secret.', 'swma-checkpoints'],
+    ['s3', L.cloud === 'aws' ? 'Amazon S3 console' : 'RustFS (S3) console', 9, L.cloud === 'aws' ? 'Real Amazon S3 buckets: checkpoints, cold-path archive and Loki log chunks.' : 'Buckets for checkpoints, the cold-path archive and Loki log chunks. Login streamlab / streamlab-secret.', Object.values(L.buckets || {}).join(', ') || 'swma-checkpoints'],
     ['registry', 'Registry UI', 8, 'Images pushed by the CI/CD pipeline.', 'swma/*'],
     ['api_docs', 'FastAPI Swagger docs', 4, 'Try every endpoint. Click Authorize and use the API key lab-public-key.', 'GET /api/v1/metrics'],
   ];

@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StreamLab Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; height: 1262px; background: #fff; font-family: "Segoe UI", Arial, sans-serif; color: #1e293b; position: relative; overflow: hidden; }
+  .abs { position: absolute; }
+  /* header / footer */
+  .head { left: 8px; top: 6px; width: 1784px; height: 80px; border-radius: 10px; background: linear-gradient(90deg, #0f2560, #1d3f99); color: #fff; padding: 8px 22px; display: flex; align-items: center; }
+  .head h1 { font-size: 36px; font-weight: 800; letter-spacing: -.5px; line-height: 1.05; }
+  .head h1 small { font-size: 17px; font-weight: 600; color: #bfdbfe; margin-left: 10px; letter-spacing: 0; }
+  .head p { font-size: 16px; font-weight: 600; color: #e0e7ff; margin-top: 3px; }
+  .head .r { margin-left: auto; border-left: 2px solid #5b74c4; padding-left: 20px; font-size: 15.5px; line-height: 1.55; color: #e0e7ff; font-weight: 600; }
+  .foot { left: 8px; top: 1218px; width: 1784px; height: 38px; border-radius: 8px; background: linear-gradient(90deg, #0f2560, #1d3f99); color: #fff; display: flex; align-items: center; padding: 0 22px; font-size: 14px; font-weight: 600; }
+  .foot .mid { margin: 0 auto; }
+  .foot .lg { display: flex; gap: 16px; align-items: center; font-weight: 500; font-size: 13px; }
+  .foot .lg i { display: inline-block; width: 34px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 5px; }
+
+  /* sections */
+  .sec { position: absolute; border: 2px solid var(--c); border-radius: 12px; background: var(--bg); padding: 7px 9px; }
+  .st { font-size: 16.5px; font-weight: 800; color: #10224f; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .st .n { background: var(--c); color: #fff; border-radius: 6px; padding: 0 7px; font-size: 14px; }
+  .st small { font-weight: 600; font-size: 12px; color: #475569; }
+  .box { background: #fff; border: 1.5px solid var(--c); border-radius: 7px; padding: 4px 7px; font-size: 11.3px; line-height: 1.35; }
+  .box b.h { display: block; font-size: 12.3px; color: #10224f; margin-bottom: 1px; }
+  .dash { border-style: dashed; }
+  .tint { background: color-mix(in srgb, var(--c) 9%, #fff); }
+  ul { list-style: none; }
+  ul li { font-size: 11.2px; line-height: 1.38; padding-left: 10px; position: relative; }
+  ul li::before { content: "•"; position: absolute; left: 0; color: var(--c); font-weight: 900; }
+  code { font-family: Consolas, monospace; font-size: 10.6px; background: #eef2ff; border-radius: 3px; padding: 0 3px; color: #1e3a8a; }
+  .row { display: flex; gap: 6px; align-items: stretch; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .ar { color: #2563eb; font-weight: 900; font-size: 15px; align-self: center; }
+  .ic { font-size: 22px; line-height: 1; }
+  .src { display: flex; gap: 7px; align-items: center; }
+  .pill { display: inline-block; border-radius: 99px; padding: 0 6px; font-size: 10.5px; font-weight: 700; background: #e0e7ff; color: #1e3a8a; margin: 1px 1px; }
+  .pill.g { background: #dcfce7; color: #166534; } .pill.o { background: #ffedd5; color: #9a3412; }
+  .pill.r { background: #fee2e2; color: #991b1b; } .pill.p { background: #ede9fe; color: #5b21b6; }
+  .pill.y { background: #fef3c7; color: #92400e; }
+  .new { display: inline-block; font-size: 9px; font-weight: 800; background: #f59e0b; color: #fff; border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; letter-spacing: .3px; }
+  .pbox { flex: 1; text-align: center; background: #fff; border: 1.5px solid var(--c); border-radius: 7px; padding: 4px 3px; font-size: 11.2px; font-weight: 700; color: #10224f; line-height: 1.2; }
+  .pbox span { display: block; font-weight: 500; font-size: 10.2px; color: #475569; }
+  .cyl { width: 120px; height: 66px; margin: 2px auto 0; position: relative; }
+  .cyl::before { content: ""; position: absolute; inset: 9px 0 0 0; background: #c4b5fd; border: 2px solid #6d28d9; border-top: 0; border-radius: 0 0 60px 60px / 0 0 14px 14px; }
+  .cyl::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 18px; background: #ddd6fe; border: 2px solid #6d28d9; border-radius: 50%; }
+  .json { font-family: Consolas, monospace; font-size: 10px; line-height: 1.3; background: #fff; border: 1px dashed #94a3b8; border-radius: 6px; padding: 4px 6px; white-space: pre; color: #334155; }
+  .tile { flex: 1; background: #fff; border: 1.5px solid var(--c); border-radius: 8px; text-align: center; padding: 4px 2px; font-size: 11px; font-weight: 700; color: #10224f; line-height: 1.2; }
+  .tile .ic { display: block; font-size: 19px; margin-bottom: 2px; }
+  .tile span { display: block; font-size: 9.8px; font-weight: 500; color: #64748b; }
+  .stage { display: flex; flex-direction: column; align-items: center; text-align: center; font-size: 10.8px; font-weight: 700; color: #10224f; line-height: 1.15; width: 74px; }
+  .stage .ic { font-size: 22px; margin-bottom: 2px; }
+  .stage span { font-weight: 500; font-size: 9.8px; color: #64748b; }
+  svg.flows { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .lbl { font-size: 11.5px; font-weight: 700; fill: #1e3a8a; font-family: "Segoe UI", Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<!-- ============================== HEADER -->
+<div class="abs head">
+  <div>
+    <h1>Streaming Window Metrics Aggregator <small>· StreamLab Virtual Lab edition</small></h1>
+    <p>Real-time metrics from microservice telemetry using tumbling &amp; sliding windows — 23 containers, one command, fully observable</p>
+  </div>
+  <div class="r">Ingest → Validate → Window → Aggregate → Store → Serve → Visualize → Learn<br>
+    Scalable • Fault-tolerant • Exactly-once state • Cloud-ready • Observable • Hands-on</div>
+</div>
+
+<!-- ============================== 1. EVENT SOURCES -->
+<div class="sec" style="--c:#2563eb;--bg:#f2f7ff;left:8px;top:96px;width:207px;height:668px">
+  <div class="st"><span class="n">1</span>Event Sources</div>
+  <div class="box" style="margin-bottom:6px"><b class="h">🛒 7 e-commerce microservices</b>
+    <span class="pill">api-gateway</span><span class="pill">order</span><span class="pill">payment</span><span class="pill">product</span><span class="pill">cart</span><span class="pill">inventory</span><span class="pill">user</span>
+    <div style="margin-top:2px">container <code>producer</code></div></div>
+  <div class="col" style="gap:5px">
+    <div class="src"><span class="ic">🌐</span><div class="box" style="flex:1"><b class="h">Request telemetry</b>latency, status code</div></div>
+    <div class="src"><span class="ic">🖥️</span><div class="box" style="flex:1"><b class="h">System metrics</b>CPU %, memory %</div></div>
+    <div class="src"><span class="ic">🎚️</span><div class="box" style="flex:1"><b class="h">Traffic scenarios</b>normal · spike · latency degradation · error storm · hot partition</div></div>
+    <div class="src"><span class="ic">🧨</span><div class="box" style="flex:1"><b class="h">Chaos injection <span class="new">NEW</span></b>out-of-order · very late · duplicate · malformed (%)</div></div>
+    <div class="src"><span class="ic">✉️</span><div class="box" style="flex:1"><b class="h">Custom events <span class="new">NEW</span></b>Event Lab: send &amp; trace your own</div></div>
+  </div>
+  <div class="json" style="margin-top:7px">{
+ "event_id": "evt-3f9a1c",
+ "service": "payment-service",
+ "event_time": "…T10:00:05.250Z",
+ "response_time_ms": 185.4,
+ "status_code": 200,
+ "cpu_percent": 41.2,
+ "memory_percent": 63.0
+}</div>
+  <div class="box tint" style="margin-top:6px"><b class="h">Ground truth <span class="new">NEW</span></b>producer counts every valid event per window → correctness check</div>
+</div>
+
+<!-- ============================== 2. MESSAGE BROKER -->
+<div class="sec" style="--c:#dc2626;--bg:#fff5f5;left:243px;top:96px;width:268px;height:668px">
+  <div class="st"><span class="n">2</span>Message Broker <small>(Kafka / Redpanda)</small></div>
+  <div class="box"><b class="h">Topic <code>telemetry.events</code> — key = service</b>
+    <div class="col" style="gap:4px;margin-top:3px">
+      <div class="box tint" style="font-weight:700">Partition 0 <span style="font-weight:400">· order, cart</span></div>
+      <div class="box tint" style="font-weight:700">Partition 1 <span style="font-weight:400">· api-gw, payment, user</span></div>
+      <div class="box tint" style="font-weight:700">Partition 2 <span style="font-weight:400">· (idle → data skew)</span></div>
+      <div class="box tint" style="font-weight:700">Partition 3 <span style="font-weight:400">· product, inventory</span></div>
+    </div></div>
+  <div class="row" style="margin-top:6px">
+    <div class="box" style="flex:1"><b class="h">telemetry.dlq</b>2 partitions<br>dead letters</div>
+    <div class="box" style="flex:1"><b class="h">metrics.windows</b>4 partitions<br>window results</div>
+  </div>
+  <div class="box dash" style="margin-top:6px"><b class="h">3-broker cluster · replication factor 3</b>
+    <div class="row" style="margin-top:3px;align-items:center">
+      <div class="box tint" style="flex:1;text-align:center;font-weight:700">Leader</div><span class="ar">→</span>
+      <div class="box tint" style="flex:1.4;text-align:center;font-weight:700">Followers (ISR)</div></div>
+    <div style="margin-top:3px"><code>redpanda-0</code> <code>redpanda-1</code> <code>redpanda-2</code><br>acks=all · leader election on broker failure</div></div>
+  <div class="box" style="margin-top:6px"><b class="h">📜 Schema Registry</b>JSON Schema <code>telemetry.events-value</code></div>
+  <div class="box" style="margin-top:6px"><b class="h">🖥️ Redpanda Console <span class="new">NEW</span></b>topics, messages, consumer lag · :8081</div>
+  <div class="box" style="margin-top:6px"><b class="h">Consumer group <code>swma-processors</code></b>offsets committed after each checkpoint</div>
+</div>
+
+<!-- ============================== 3. STREAM PROCESSING ENGINE -->
+<div class="sec" style="--c:#0284c7;--bg:#f0f9ff;left:540px;top:96px;width:776px;height:668px">
+  <div class="st"><span class="ic" style="font-size:20px">🐍</span><span class="n">3</span>Stream Processing Engine (Python) <small>container <code>processor</code></small></div>
+  <div class="row" style="gap:8px;height:612px">
+    <!-- left column -->
+    <div class="col" style="width:196px">
+      <div class="box"><b class="h">Supervisor <span class="new">NEW</span></b>starts / heals workers · autoscaler · control :8090</div>
+      <div class="box dash" style="--c:#0284c7"><b class="h">Kafka Consumer Group</b>
+        <div class="col" style="gap:3px;margin-top:2px">
+          <div class="box tint" style="text-align:center"><b>processor-1</b> · P0, P2</div>
+          <div class="box tint" style="text-align:center"><b>processor-2</b> · P1, P3</div>
+          <div class="box tint dash" style="text-align:center"><b>processor-3</b> · on scale-up</div>
+          <div class="box tint dash" style="text-align:center"><b>processor-4</b> · on scale-up</div>
+        </div>
+        <div style="margin-top:3px">1–4 workers · rebalance on join/leave/crash</div></div>
+      <div class="box" style="--c:#7c3aed"><b class="h">Checkpointing (Offsets + State)</b>every 5 s: windows + dedup ids + next offset in <b>one atomic write</b>, then commit offset</div>
+      <div style="text-align:center;font-size:11px;font-weight:700;color:#6d28d9">↕ restore on assign / restart</div>
+      <div class="cyl"></div>
+      <div style="text-align:center;font-size:11.5px;font-weight:700;color:#10224f;line-height:1.25">State Store<br><span style="font-weight:500;font-size:10.5px;color:#475569">RocksDB per partition (/state)<br>+ S3 snapshot every 30 s <span class="new">NEW</span></span></div>
+    </div>
+    <!-- right column -->
+    <div class="col" style="flex:1">
+      <div class="box dash"><b class="h">Stream Processing Pipeline (per event)</b>
+        <div class="row" style="margin-top:3px;gap:3px">
+          <div class="pbox">Deserialize<br>&amp; Parse<span>JSON object?</span></div><span class="ar">→</span>
+          <div class="pbox">Schema<br>Validation<span>from registry</span></div><span class="ar">→</span>
+          <div class="pbox">Extract<br>Event Time<span>&lt; now + 5 min</span></div><span class="ar">→</span>
+          <div class="pbox">Router &amp;<br>Enrichment<span>+ team, tier</span></div><span class="ar">→</span>
+          <div class="pbox">Duplicate<br>Check <span>event_id</span></div><span class="ar">→</span>
+          <div class="pbox">Watermark<span>max − 5 s<br>idle → clock</span></div>
+        </div>
+        <div style="font-size:10.5px;color:#991b1b;margin-top:2px">✗ invalid at any stage → <b>telemetry.dlq</b> (reason, partition, offset, original payload)</div></div>
+      <div class="box"><b class="h" style="text-align:center">Window Assignment Engine</b>
+        <div class="row" style="margin-top:2px">
+          <div class="box tint" style="flex:1"><b class="h">Tumbling Window</b><ul><li>size 60 s, non-overlapping</li><li>each event → 1 window</li><li>half-open [start, end)</li></ul></div>
+          <div class="box tint" style="flex:1"><b class="h">Sliding Window</b><ul><li>size 60 s, slide 10 s</li><li>overlapping</li><li>each event → 6 windows</li></ul></div>
+        </div></div>
+      <div class="box"><b class="h" style="text-align:center">Stateful Aggregation (Incremental) — per service × window</b>
+        <div class="row" style="margin-top:2px;gap:4px">
+          <div class="tile">Count<span>count += 1</span></div><div class="tile">Sum<span>sum += latency</span></div>
+          <div class="tile">Average<span>sum / count</span></div><div class="tile">Min<span>min(min, v)</span></div>
+          <div class="tile">Max<span>max(max, v)</span></div><div class="tile">Errors<span>status ≥ 500</span></div>
+          <div class="tile">CPU / Mem<span>running avg</span></div>
+        </div></div>
+      <div class="row" style="flex:1">
+        <div class="box" style="flex:1.25;min-width:0"><b class="h">Window Trigger &amp; Emission</b>
+          <div class="row" style="gap:3px;margin:3px 0;align-items:center">
+            <span class="pill">open</span><span class="ar" style="font-size:12px">→</span><span class="pill y">closed</span><span class="ar" style="font-size:12px">→</span><span class="pill o">updated</span><span class="ar" style="font-size:12px">→</span><span class="pill g">final</span></div>
+          <ul><li><b>open</b>: periodic partial result every 2 s</li><li><b>closed</b>: watermark ≥ window end</li><li><b>updated</b>: late event corrected it</li><li><b>final</b>: watermark ≥ end + lateness (10 s) → state dropped</li></ul>
+          <div style="margin-top:2px">→ Redis · <code>metrics.windows</code> · S3 archive (final)</div>
+          <div class="json" style="margin-top:5px;white-space:pre-wrap;font-size:9.6px">{ "window_type": "tumbling", "service": "payment-service",
+  "window_start": "10:00:00", "window_end": "10:01:00",
+  "status": "final", "count": 250, "sum": 46250,
+  "avg": 185.0, "min": 42.1, "max": 812.6,
+  "error_rate": 1.2, "throughput_eps": 4.17, "late_events": 2 }</div></div>
+        <div class="box" style="flex:1;min-width:0"><b class="h">Late &amp; Out-of-Order Handling</b>
+          <div class="col" style="gap:3px;margin-top:3px">
+            <div class="box tint" style="--c:#16a34a"><b>On time / out of order</b> (inside bound) → normal update</div>
+            <div class="box tint" style="--c:#d97706"><b>Late, within allowed lateness?</b> Yes → update window, re-emit</div>
+            <div class="box tint" style="--c:#dc2626"><b>Too late</b> (all windows final) → Dead Letter Queue</div>
+            <div class="box tint" style="--c:#64748b"><b>Duplicate</b> event_id → ignored</div>
+          </div>
+          <div style="margin-top:5px"><b>Exactly-once state</b> after crashes (checkpoint + replay)</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 4. STORAGE & SERVING -->
+<div class="sec" style="--c:#ea580c;--bg:#fff8f1;left:1344px;top:96px;width:448px;height:392px">
+  <div class="st"><span class="n">4</span>Metrics Storage &amp; Serving</div>
+  <div class="row">
+    <span class="ic" style="font-size:30px">🟥</span>
+    <div class="box" style="flex:1"><b class="h">Redis (In-Memory Store)</b>
+      <ul><li><code>metrics:tumbling:{window_id}</code> / <code>metrics:sliding:{window_id}</code> → field per service</li>
+        <li><code>metrics:latest|last_closed:{type}:{service}</code></li>
+        <li><code>metrics:history:{type}:{service}</code> (sorted set)</li>
+        <li>TTL 1 h · pub/sub <code>swma:updates</code> · retries w/ backoff</li></ul></div>
+  </div>
+  <div class="box" style="margin-top:5px"><b class="h">🔎 RedisInsight <span class="new">NEW</span></b>browse keys live · :5540</div>
+  <div class="row" style="margin-top:5px">
+    <span class="ic" style="font-size:30px">⚡</span>
+    <div class="box" style="flex:1"><b class="h">FastAPI (Backend API) × 2 replicas — <code>api-1</code>, <code>api-2</code></b>
+      <ul><li>REST <code>/api/v1/metrics/{service}</code>, <code>/history</code>, <code>/windows</code></li>
+        <li>WebSocket <code>/ws/live</code> (results, alerts) · <code>/ws/stream</code> (Kafka tail)</li>
+        <li>Reads from Redis only — never raw Kafka</li>
+        <li>API key (read) · JWT (admin) · token-bucket rate limit → 429</li>
+        <li>Swagger docs · <code>X-Served-By</code> header · lab &amp; explorer APIs</li></ul></div>
+  </div>
+</div>
+
+<!-- ============================== 5. DASHBOARD / VIRTUAL LAB -->
+<div class="sec" style="--c:#1d4ed8;--bg:#f2f6ff;left:1344px;top:514px;width:448px;height:250px">
+  <div class="st"><span class="n">5</span>Dashboard &amp; Virtual Lab Portal <small>:8080</small></div>
+  <div class="row">
+    <span class="ic" style="font-size:30px">📊</span>
+    <div class="box" style="flex:1"><ul>
+      <li><b>Live dashboard</b>: tumbling &amp; sliding views, charts, history, alert banner</li>
+      <li><b>Theory</b>: 11 lessons + in-browser simulations <span class="new">NEW</span></li>
+      <li><b>14 guided experiments</b>, auto-checked steps, quizzes <span class="new">NEW</span></li>
+      <li><b>Event tracer</b> + live view of every service <span class="new">NEW</span></li>
+      <li>"What just happened" timeline via WebSocket</li></ul></div>
+  </div>
+  <div class="box dash" style="margin-top:6px;text-align:center"><b class="h">Users / Stakeholders</b>
+    <div class="row" style="justify-content:space-around;font-size:11px;font-weight:600">
+      <span>🎓 Students</span><span>🧑‍🏫 Evaluators</span><span>💻 Developers</span><span>🛠️ Operations</span><span>📈 Analysts</span></div></div>
+  <div style="margin-top:5px;line-height:1.45"><b style="font-size:11px">14 pages:</b> <span class="pill">Home</span><span class="pill">Architecture</span><span class="pill">Theory</span><span class="pill">Experiments</span><span class="pill">Tracer</span><span class="pill">Kafka</span><span class="pill">Processor</span><span class="pill">Redis/API</span><span class="pill">Control</span><span class="pill">Observability</span><span class="pill">CI/CD</span><span class="pill">AWS</span><span class="pill">Resilience</span><span class="pill">Quiz</span></div>
+</div>
+
+<!-- ============================== 6. CONTROL PLANE -->
+<div class="sec" style="--c:#16a34a;--bg:#f3fcf6;left:8px;top:800px;width:352px;height:262px">
+  <div class="st"><span class="ic" style="font-size:19px">⚙️</span><span class="n">6</span>Control Plane <small>(Config &amp; Management)</small></div>
+  <div class="row">
+    <div class="box dash" style="flex:1.35"><b class="h">Configuration Service (37 live settings)</b>
+      <ul><li>Window size, slide, allowed lateness</li><li>Watermark bound, idle timeout, triggers</li><li>Checkpoint / S3 backup / TTL</li><li>Feature flags (schema, dedup, early firing)</li><li>Scaling policy (min/max, lag thresholds)</li><li>Producer rate, scenario, chaos %</li><li>Rate limit, alert thresholds</li></ul></div>
+    <div class="col" style="flex:1">
+      <div class="box" style="text-align:center"><span class="ic">🗄️</span><b class="h">Config DB — Consul</b>KV <code>swma/config/*</code><br>UI :8500</div>
+      <div class="box"><b class="h">🖥️ Admin UI / CLI</b>Control-plane page · <code>python -m swma.cli</code></div>
+      <div class="box"><b class="h">Service registry <span class="new">NEW</span></b>health checks · audit log</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 7. DEVOPS -->
+<div class="sec" style="--c:#7c3aed;--bg:#f8f5ff;left:384px;top:800px;width:430px;height:262px">
+  <div class="st"><span class="ic" style="font-size:19px">🐙</span><span class="n">7</span>DevOps &amp; CI/CD Pipeline</div>
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div class="stage"><span class="ic">📝</span>Code Commit<span>Git</span></div><span class="ar">→</span>
+    <div class="stage"><span class="ic">🧪</span>Build &amp; Test<span>pytest</span></div><span class="ar">→</span>
+    <div class="stage"><span class="ic">🛡️</span>Security Scan<span>bandit · Trivy</span></div><span class="ar">→</span>
+    <div class="stage"><span class="ic">🐳</span>Build Images<span>5 images</span></div><span class="ar">→</span>
+    <div class="stage"><span class="ic">📦</span>Push<span>registry / ECR</span></div><span class="ar">→</span>
+    <div class="stage"><span class="ic">🚀</span>Deploy<span>rolling, 0 errors</span></div>
+  </div>
+  <div class="row" style="margin-top:5px">
+    <div class="box dash" style="flex:1.2"><b class="h">Automated Tests (22)</b>
+      <ul><li>Unit · window correctness</li><li>Out-of-order &amp; late events</li><li>Duplicate events</li><li>Failure recovery (crash → replay)</li><li>Integration / e2e on full stack</li><li>Load: producer up to 5000 ev/s</li></ul></div>
+    <div class="col" style="flex:1">
+      <div class="box"><b class="h">Local runner <span class="new">NEW</span></b><code>ops-agent</code>: one-click pipeline from the lab</div>
+      <div class="box"><b class="h">GitHub Actions</b><code>ci.yml</code> tests · scan · e2e · images<br><code>cd.yml</code> ECR + EC2 (manual)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 8. REGISTRY -->
+<div class="sec" style="--c:#0369a1;--bg:#f0f8ff;left:838px;top:800px;width:196px;height:262px">
+  <div class="st"><span class="n">8</span>Container Registry</div>
+  <div style="text-align:center;font-size:44px;line-height:1.1">🐋</div>
+  <div style="text-align:center;font-weight:700;font-size:12.5px;color:#10224f">Docker Registry<br><span style="font-weight:500;font-size:11px">(= Docker Hub / Amazon ECR)</span></div>
+  <div class="box dash" style="margin-top:5px"><ul><li>Versioned images, tag = git commit</li><li><code>swma/producer</code> · <code>processor</code> · <code>api</code> · <code>ops-agent</code> · <code>dashboard</code></li><li>Registry UI :5080</li></ul></div>
+</div>
+
+<!-- ============================== 9. DEPLOYMENT -->
+<div class="sec" style="--c:#ea580c;--bg:#fff8f1;left:1058px;top:800px;width:350px;height:262px">
+  <div class="st"><span class="ic" style="font-size:19px">☁️</span><span class="n">9</span>Deployment <small>(local stand-ins → AWS)</small></div>
+  <div class="box dash" style="--c:#16a34a"><b class="h" style="color:#166534">VPC (Terraform: VPC · SG · EC2 · S3 · ECR · IAM/SSM)</b>
+    <div class="box tint" style="text-align:center;font-weight:700;margin:3px 0">nginx ALB :8080 → api-1 / api-2 (round robin, failover)</div>
+    <div class="row" style="gap:4px">
+      <div class="box tint" style="flex:1;text-align:center"><b>EC2</b><br>processor</div>
+      <div class="box tint" style="flex:1;text-align:center"><b>EC2</b><br>API</div>
+      <div class="box tint" style="flex:1;text-align:center"><b>EC2</b><br>dashboard</div>
+    </div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <div class="box tint" style="flex:1;text-align:center;--c:#dc2626"><b>Redis</b><br>→ ElastiCache</div>
+      <div class="box tint" style="flex:1;text-align:center;--c:#dc2626"><b>Redpanda</b><br>→ MSK / EC2</div>
+      <div class="box tint" style="flex:1.2;text-align:center;--c:#16a34a"><b>RustFS = S3</b><br>backups · archive · logs</div>
+    </div></div>
+  <div class="row" style="margin-top:5px;gap:4px">
+    <div class="box" style="flex:1"><b class="h">Auto Scaling</b>workers 1–4 on Kafka lag</div>
+    <div class="box" style="flex:1;--c:#dc2626"><b class="h">🛡️ Security Group</b>ports bound to 127.0.0.1</div>
+  </div>
+</div>
+
+<!-- ============================== 10. OBSERVABILITY -->
+<div class="sec" style="--c:#15803d;--bg:#f3fcf6;left:1432px;top:800px;width:360px;height:262px">
+  <div class="st"><span class="ic" style="font-size:19px">🔭</span><span class="n">10</span>Observability &amp; Monitoring</div>
+  <div class="row">
+    <div class="col" style="flex:1">
+      <div class="row" style="align-items:center;justify-content:center;gap:4px;font-size:11px;font-weight:700;text-align:center">
+        <div><span class="ic">🔥</span><br>Prometheus<br><span style="font-weight:500">11 jobs · 5 s</span></div><span class="ar">→</span>
+        <div><span class="ic">📈</span><br>Grafana<br><span style="font-weight:500">4 dashboards</span></div></div>
+      <div class="box"><b class="h">📜 Logs — Loki (stored in S3)</b><ul><li>Application logs</li><li>Error logs</li><li>Audit logs (who changed what)</li></ul></div>
+    </div>
+    <div class="col" style="flex:1">
+      <div class="box dash"><b class="h">Metrics</b><ul><li>Consumer lag</li><li>Throughput, p95 latency</li><li>Window results, watermark delay</li><li>Container CPU / memory</li><li>Redis, API, brokers</li></ul></div>
+      <div class="box dash" style="--c:#dc2626"><b class="h">🚨 Alertmanager</b><ul><li>High lag · worker down</li><li>Latency / error rate (thresholds from Consul)</li><li>Broker down · DLQ spike</li></ul>→ webhook → API → browser</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 11. RESILIENCE -->
+<div class="sec" style="--c:#9333ea;--bg:#faf5ff;left:8px;top:1088px;width:1172px;height:122px">
+  <div class="st"><span class="n">11</span>Scalability, Fault Tolerance &amp; Resilience</div>
+  <div class="row" style="gap:5px">
+    <div class="tile"><span class="ic">📊</span>Horizontal &amp; Auto Scaling<span>1–4 workers on lag</span></div>
+    <div class="tile"><span class="ic">🗂️</span>Kafka Partitioning<span>key = service</span></div>
+    <div class="tile"><span class="ic">💾</span>State Checkpointing<span>RocksDB 5 s + S3 30 s</span></div>
+    <div class="tile"><span class="ic">🔁</span>Replication<span>3 brokers, RF 3</span></div>
+    <div class="tile"><span class="ic">⏳</span>Backpressure<span>lag monitor → scale</span></div>
+    <div class="tile"><span class="ic">♻️</span>Retry Mechanism<span>exponential backoff</span></div>
+    <div class="tile"><span class="ic">📮</span>Dead Letter Queue<span>invalid / too late</span></div>
+    <div class="tile"><span class="ic">🛑</span>Graceful Shutdown<span>checkpoint, leave group</span></div>
+    <div class="tile"><span class="ic">🩹</span>Self-healing <span class="new">NEW</span><span>restart crashed worker</span></div>
+    <div class="tile"><span class="ic">💥</span>Chaos Controls <span class="new">NEW</span><span>crash · stop broker · disk loss</span></div>
+  </div>
+</div>
+
+<!-- ============================== 12. KEY METRICS -->
+<div class="sec" style="--c:#db2777;--bg:#fff5fa;left:1204px;top:1088px;width:588px;height:122px">
+  <div class="st"><span class="n">12</span>Key Metrics Generated <small>(per service, per window)</small></div>
+  <div class="row" style="gap:4px">
+    <div class="tile"><span class="ic">🔢</span>Count</div><div class="tile"><span class="ic">➕</span>Sum</div>
+    <div class="tile"><span class="ic">⏱️</span>Average</div><div class="tile"><span class="ic">⬇️</span>Min</div>
+    <div class="tile"><span class="ic">⬆️</span>Max</div><div class="tile"><span class="ic">❗</span>Error Rate</div>
+    <div class="tile"><span class="ic">🚀</span>Throughput</div><div class="tile"><span class="ic">⌛</span>Processing Latency</div>
+    <div class="tile"><span class="ic">🖥️</span>CPU / Mem</div>
+  </div>
+</div>
+
+<!-- ============================== FOOTER -->
+<div class="abs foot"><span>http://localhost:8080 · START-LAB.bat</span><span class="mid">From Events to Insights — In Real Time, In Windows</span>
+  <span class="lg">Legend: <span><i style="border-color:#2563eb"></i>Data flow</span><span><i style="border-color:#16a34a;border-top-style:dashed"></i>Control flow</span><span><i style="border-color:#f59e0b;border-top-style:dashed"></i>Monitoring flow</span><span><i style="border-color:#dc2626;border-top-style:dotted"></i>Dead letters</span></span></div>
+
+<!-- ============================== FLOW ARROWS -->
+<svg class="flows" width="1800" height="1262" viewBox="0 0 1800 1262">
+  <defs>
+    <marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#2563eb"/></marker>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#16a34a"/></marker>
+    <marker id="o" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#f59e0b"/></marker>
+    <marker id="r" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#dc2626"/></marker>
+  </defs>
+  <!-- 1 → 2 produce -->
+  <line x1="215" y1="300" x2="241" y2="300" stroke="#2563eb" stroke-width="3" marker-end="url(#b)"/>
+  <text x="217" y="290" class="lbl" font-size="10">JSON</text>
+  <!-- 2 → 3 pull -->
+  <line x1="511" y1="230" x2="538" y2="230" stroke="#2563eb" stroke-width="3" marker-end="url(#b)"/>
+  <text x="511" y="220" class="lbl" font-size="10">pull</text>
+  <!-- 3 → 4 results -->
+  <line x1="1316" y1="250" x2="1342" y2="250" stroke="#2563eb" stroke-width="3" marker-end="url(#b)"/>
+  <!-- 3 → 2 dead letters & results -->
+  <path d="M540,752 L520,752 L520,640 L513,640" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="3 3" marker-end="url(#r)"/>
+  <!-- 4 → 5 -->
+  <line x1="1568" y1="488" x2="1568" y2="512" stroke="#2563eb" stroke-width="3" marker-end="url(#b)"/>
+  <text x="1576" y="505" class="lbl" font-size="10.5">REST + WebSocket</text>
+  <!-- 6 → 3 push config -->
+  <path d="M300,800 L300,782 L700,782 L700,766" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#g)"/>
+  <text x="330" y="777" class="lbl" style="fill:#166534">push config dynamically (Consul blocking query, ~1 s) → producer · processor · API</text>
+  <!-- 7 → 8 → 9 -->
+  <line x1="814" y1="880" x2="836" y2="880" stroke="#7c3aed" stroke-width="3" marker-end="url(#b)"/>
+  <line x1="1034" y1="880" x2="1056" y2="880" stroke="#2563eb" stroke-width="3" marker-end="url(#b)"/>
+  <!-- monitoring: system → 10 -->
+  <path d="M1300,764 L1300,788 L1700,788 L1700,798" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#o)"/>
+  <text x="1312" y="783" class="lbl" style="fill:#92400e">metrics · logs · alerts from every container</text>
+</svg>
+</body>
+</html>

@@ -6,6 +6,12 @@ The watermark only moves forward. It means "I believe every event older than
 this has arrived". When a partition goes quiet for ``idle_timeout`` the
 watermark follows the wall clock instead, otherwise the last windows would
 never close once the traffic stops.
+
+"Quiet" must mean *nothing left to read*, not "nothing processed lately": a
+worker catching up after a crash or rebalance processes nothing for a while
+although its backlog is full of events. Advancing the watermark then would
+turn that whole backlog into "too late" events. So the caller passes
+``idle_allowed`` = the consumer has caught up (lag 0).
 """
 from __future__ import annotations
 
@@ -25,9 +31,9 @@ class Watermark:
             self.max_event_ts = ts_ms
         self.last_seen_wall = wall_ms
 
-    def value(self, wall_ms: int) -> int | None:
+    def value(self, wall_ms: int, idle_allowed: bool = True) -> int | None:
         candidate = None if self.max_event_ts is None else self.max_event_ts - self.bound_ms
-        if self.last_seen_wall is not None and wall_ms - self.last_seen_wall > self.idle_timeout_ms:
+        if idle_allowed and self.is_idle(wall_ms):
             idle = wall_ms - self.idle_timeout_ms - self.bound_ms
             candidate = idle if candidate is None else max(candidate, idle)
         if candidate is not None and (self.current is None or candidate > self.current):

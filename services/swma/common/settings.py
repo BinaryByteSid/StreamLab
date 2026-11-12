@@ -25,12 +25,17 @@ OPS_AGENT_URL = _env("OPS_AGENT_URL", "http://ops-agent:8095")
 OPS_AGENT_TOKEN = _env("OPS_AGENT_TOKEN", "streamlab-internal")
 SUPERVISOR_URL = _env("SUPERVISOR_URL", "http://processor:8090")
 
+# Locally: RustFS with static keys. On AWS: s3.<region>.amazonaws.com, HTTPS, empty
+# keys (the EC2 instance role supplies credentials) and globally unique bucket names.
 S3_ENDPOINT = _env("S3_ENDPOINT", "rustfs:9000")
+S3_SECURE = _env("S3_SECURE", "false").lower() == "true"
+S3_REGION = _env("S3_REGION", "") or None
 S3_ACCESS_KEY = _env("S3_ACCESS_KEY", "streamlab")
 S3_SECRET_KEY = _env("S3_SECRET_KEY", "streamlab-secret")
-BUCKET_CHECKPOINTS = "swma-checkpoints"
-BUCKET_ARCHIVE = "swma-archive"
-BUCKET_LOGS = "swma-logs"
+BUCKET_CHECKPOINTS = _env("BUCKET_CHECKPOINTS", "swma-checkpoints")
+BUCKET_ARCHIVE = _env("BUCKET_ARCHIVE", "swma-archive")
+BUCKET_LOGS = _env("BUCKET_LOGS", "swma-logs")
+CLOUD = _env("SWMA_CLOUD", "local")  # "local" or "aws"
 
 TOPIC_EVENTS = _env("TOPIC_EVENTS", "telemetry.events")
 TOPIC_DLQ = _env("TOPIC_DLQ", "telemetry.dlq")
@@ -65,4 +70,5 @@ PUBLIC_URLS = {
     "registry": _env("PUBLIC_REGISTRY_UI_URL", "http://localhost:5080"),
     "loki": _env("PUBLIC_LOKI_URL", "http://localhost:3001/explore"),
     "api_docs": _env("PUBLIC_API_DOCS_URL", "http://localhost:8080/api/docs"),
+    "cloudwatch": _env("PUBLIC_CLOUDWATCH_URL", ""),  # set only in the AWS deployment
 }

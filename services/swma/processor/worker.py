@@ -17,10 +17,10 @@ import time
 
 import redis
 from confluent_kafka import OFFSET_STORED, Consumer, KafkaError, KafkaException, Producer, TopicPartition
-from minio import Minio
 
 from swma.common import labbus, log as logsetup, settings
 from swma.common.config import LiveConfig
+from swma.common.storage import s3_client
 from swma.common.schema import SERVICE_CATALOG, Validator, fetch_registry_schema, iso, now_ms, parse_event_time
 from swma.engine.engine import EngineConfig, PartitionEngine
 
@@ -52,7 +52,7 @@ class Worker:
         self.ecfg = EngineConfig.from_live(self.cfg.snapshot())
         self.r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_timeout=3)
         self.set_if_newer = self.r.register_script(SET_IF_NEWER)
-        self.s3 = Minio(settings.S3_ENDPOINT, settings.S3_ACCESS_KEY, settings.S3_SECRET_KEY, secure=False)
+        self.s3 = s3_client()
         schema, version = fetch_registry_schema(settings.SCHEMA_REGISTRY_URL, settings.SCHEMA_SUBJECT)
         self.validator = Validator(schema)
         self.schema_version = version
@@ -386,9 +386,11 @@ class Worker:
             try:
                 lo, hi = self.consumer.get_watermark_offsets(TopicPartition(settings.TOPIC_EVENTS, p),
                                                              timeout=1, cached=False)
+                pos = eng.next_offset if eng.next_offset is not None else lo
+                eng.caught_up = pos >= hi  # only now may an idle partition's watermark follow the clock
             except KafkaException:
-                lo, hi = 0, 0
-            pos = eng.next_offset if eng.next_offset is not None else lo
+                lo = hi = pos = 0
+                eng.caught_up = False
             d["high_watermark"], d["lag"] = hi, max(0, hi - pos)
             store = self.stores[p]
             d["restored_from"] = self.restored_from.get(p)

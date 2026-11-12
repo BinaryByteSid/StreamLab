@@ -108,6 +108,9 @@ class PartitionEngine:
         self.dedup: dict[str, int] = {}
         self.wm = Watermark(self.cfg.bound_ms, self.cfg.idle_ms)
         self.next_offset: int | None = None
+        # True only when the consumer has read everything Kafka holds for this
+        # partition (set by the worker). Idle watermark advance needs it.
+        self.caught_up = False
         self.counters = {"on_time": 0, "out_of_order": 0, "late_accepted": 0, "too_late": 0, "duplicate": 0}
         self._changed: set[WindowKey] = set()
         self._removed: set[WindowKey] = set()
@@ -133,7 +136,7 @@ class PartitionEngine:
             self.counters["duplicate"] += 1
             return Outcome("duplicate", [], [], self.wm.current)
 
-        wm = self.wm.value(wall_ms)
+        wm = self.wm.value(wall_ms, self.caught_up)
         prev_max = self.wm.max_event_ts
         lateness = self.cfg.lateness_ms
         assigned, dropped, any_late = [], [], False
@@ -180,7 +183,7 @@ class PartitionEngine:
     # ---------------------------------------------------------------- trigger
     def tick(self, wall_ms: int) -> list[dict]:
         """Window Trigger & Emission. Call often (every ~0.5s)."""
-        wm = self.wm.value(wall_ms)
+        wm = self.wm.value(wall_ms, self.caught_up)
         lateness, out = self.cfg.lateness_ms, []
         for key, w in list(self.windows.items()):
             if wm is not None and w.end + lateness <= wm:
@@ -232,7 +235,7 @@ class PartitionEngine:
 
     # ------------------------------------------------------------- inspection
     def describe(self, wall_ms: int) -> dict:
-        wm = self.wm.value(wall_ms)
+        wm = self.wm.value(wall_ms, self.caught_up)
         phases = {"open": 0, "closed": 0}
         for w in self.windows.values():
             phases[w.phase] = phases.get(w.phase, 0) + 1
@@ -242,7 +245,7 @@ class PartitionEngine:
             "watermark_ms": wm,
             "max_event_time": _iso(self.wm.max_event_ts),
             "watermark_delay_s": round((wall_ms - wm) / 1000, 1) if wm is not None else None,
-            "idle": self.wm.is_idle(wall_ms),
+            "idle": self.caught_up and self.wm.is_idle(wall_ms),
             "open_windows": phases["open"],
             "closed_windows": phases["closed"],
             "dedup_keys": len(self.dedup),
@@ -251,7 +254,7 @@ class PartitionEngine:
         }
 
     def active_windows(self, wall_ms: int, limit: int = 60) -> list[dict]:
-        wm = self.wm.value(wall_ms)
+        wm = self.wm.value(wall_ms, self.caught_up)
         items = sorted(self.windows.values(), key=lambda w: (w.start, w.wtype, w.service))[-limit:]
         return [self._emission(w, w.phase, wm, wall_ms) for w in items]
 

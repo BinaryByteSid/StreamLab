@@ -17,6 +17,14 @@ Your data is kept between runs. `docker compose down -v` deletes it.
 
 Needs about **3 GB of free RAM** for Docker (23 containers).
 
+## Run it in the cloud (AWS, Free plan)
+
+`deploy/aws/` runs the same lab 24/7 on AWS so the stream keeps flowing in the background:
+EC2 (`m7i-flex.large`, free-plan eligible) for the containers, Amazon S3 for checkpoints, archive
+and logs, and CloudWatch Metrics, Logs (Live Tail of the stream), Dashboard and Alarms, plus SNS e-mail
+and an AWS Budgets alert. Everything is created by one `terraform apply` from AWS CloudShell. See
+[deploy/aws/README.md](deploy/aws/README.md).
+
 ## What's inside the portal (http://localhost:8080)
 
 | Page | What you do there |

@@ -48,8 +48,9 @@ SPECS: list[Spec] = [
     # --- Watermark & triggers ---------------------------------------------
     Spec("watermark/max_out_of_orderness_s", 5, "int", "Watermark", "Max out-of-orderness (seconds)",
          "Watermark = newest event time seen minus this bound.", 0, 120),
-    Spec("watermark/idle_timeout_s", 10, "int", "Watermark", "Idle timeout (seconds)",
-         "If a partition gets no events for this long, its watermark follows the wall clock so windows still close.", 2, 300),
+    Spec("watermark/idle_timeout_s", 30, "int", "Watermark", "Idle timeout (seconds)",
+         "If a fully caught-up partition gets no events for this long, its watermark follows the wall clock so "
+         "windows still close when the stream stops. Too small and a short broker hiccup closes windows early.", 5, 300),
     Spec("trigger/emit_interval_s", 2, "int", "Watermark", "Periodic trigger interval (seconds)",
          "How often partial (still open) window results are emitted.", 1, 60),
     # --- State & checkpointing --------------------------------------------

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 import uuid
 
@@ -89,14 +90,19 @@ async def status():
 
 @router.get("/links")
 async def links():
-    return settings.PUBLIC_URLS
+    from swma.common.storage import buckets
+    return {**settings.PUBLIC_URLS, "cloud": settings.CLOUD, "buckets": buckets()}
 
 
 async def _prom(query: str) -> float | None:
     try:
         r = await C.http.get(f"{settings.PROMETHEUS_URL}/api/v1/query", params={"query": query}, timeout=2)
         res = r.json()["data"]["result"]
-        return round(float(res[0]["value"][1]), 2) if res else 0.0
+        if not res:
+            return 0.0
+        value = float(res[0]["value"][1])
+        # NaN/Inf (e.g. a percentile with no samples yet after a restart) is not valid JSON.
+        return round(value, 2) if math.isfinite(value) else None
     except Exception:
         return None
 

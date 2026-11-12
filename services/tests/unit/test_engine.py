@@ -122,3 +122,28 @@ def test_incremental_checkpoint_deletes_finalized_windows():
         store.pop(k, None)
     store.update(puts)
     assert not any(k.startswith(f"w|tumbling|payment-service|{T0}|") for k in store)
+
+
+def test_lagging_partition_is_not_treated_as_idle():
+    # Regression: after a rebalance a worker may process nothing for a while
+    # although Kafka holds a backlog. The watermark must not jump to the wall
+    # clock then, or the whole backlog would be dropped as "too late".
+    cfg = EngineConfig(tumbling_ms=60_000, sliding_ms=60_000, slide_ms=10_000, lateness_ms=10_000,
+                       bound_ms=5_000, idle_ms=10_000, emit_interval_ms=0)
+    eng = PartitionEngine(0, cfg)
+    eng.process(*ev(1, T0 + 1_000), T0 + 1_000)
+    eng.caught_up = False  # backlog still waiting in Kafka
+    eng.tick(T0 + 180_000)  # three minutes without a processed event
+    late_arrival = eng.process(*ev(2, T0 + 2_000), T0 + 180_000)
+    assert late_arrival.kind == "on_time"
+    assert eng.windows[("tumbling", "payment-service", T0, T0 + 60_000)].agg.count == 2
+
+
+def test_caught_up_idle_partition_still_closes_windows():
+    cfg = EngineConfig(tumbling_ms=60_000, sliding_ms=60_000, slide_ms=10_000, lateness_ms=10_000,
+                       bound_ms=5_000, idle_ms=10_000, emit_interval_ms=0)
+    eng = PartitionEngine(0, cfg)
+    eng.process(*ev(1, T0 + 1_000), T0 + 1_000)
+    eng.caught_up = True  # nothing left to read: the stream really stopped
+    emitted = eng.tick(T0 + 180_000)
+    assert any(e["status"] == "final" and e["start_ms"] == T0 for e in emitted)
