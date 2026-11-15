@@ -109,6 +109,13 @@ route(/^\/devops$/, async (main, ctx) => {
 route(/^\/cloud$/, async (main) => {
   const L = await links();
   const onAws = L.cloud === 'aws';
+  const hybrid = L.cloud === 'hybrid' ? `<div class="card" style="border-color:#fdba74;background:#fff7ed"><h2>🟢 Connected to AWS (hybrid mode)</h2>
+      <p>The pipeline runs on this computer, and its storage and monitoring are live AWS cloud services:</p>
+      <ul class="small"><li><b>Amazon S3</b>: state checkpoints every 30 s, archived final windows, Loki logs, and every minute a JSON-lines file of the live stream (<code>stream/raw-events/…</code>, <code>stream/window-results/…</code>).</li>
+      <li><b>Amazon CloudWatch</b>: the <b>StreamLab</b> dashboard with events/s, consumer lag, workers, p95 latency and dead letters, updated every minute.</li></ul>
+      <div class="row"><a class="btn primary" href="${esc(L.cloudwatch)}" target="_blank" rel="noopener">CloudWatch dashboard ↗</a>
+      <a class="btn" href="${esc(L.s3)}" target="_blank" rel="noopener">Live stream files in S3 ↗</a></div>
+      <p class="small muted">Buckets: ${Object.values(L.buckets || {}).map((b) => `<code>${esc(b)}</code>`).join(' ')}. The AWS console links need the AWS login.</p></div>` : '';
   const live = onAws ? `<div class="card" style="border-color:#fdba74;background:#fff7ed"><h2>🟢 This lab is running on AWS right now</h2>
       <p>The pipeline runs 24/7 on an EC2 instance. The stream is mirrored into Amazon CloudWatch so it can be watched from the AWS console:</p>
       <div class="row"><a class="btn primary" href="${esc(L.cloudwatch)}" target="_blank" rel="noopener">CloudWatch dashboard ↗</a>
@@ -128,7 +135,7 @@ route(/^\/cloud$/, async (main) => {
     ['docker network + published ports', 'VPC, subnets and Security Groups', 'Only 80/443 public; 9092 internal'],
   ];
   main.innerHTML = `${head(9, 'var(--s9)', 'Deployment on AWS', 'Locally every AWS service has a stand-in container, so you can learn the architecture for free. The deploy/aws folder holds Terraform to run the same stack on AWS.')}
-    ${live}
+    ${live}${hybrid}
     <div class="card"><h2>Local ↔ AWS mapping</h2><div class="table-wrap"><table><thead><tr><th>In this lab</th><th>On AWS</th><th>Purpose</th></tr></thead><tbody>${rows.map((r) => `<tr><td><code>${esc(r[0])}</code></td><td><b>${esc(r[1])}</b></td><td>${esc(r[2])}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="grid g2">
       <div class="card"><h2>VPC layout</h2><pre><code>VPC 10.0.0.0/16

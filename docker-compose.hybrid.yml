@@ -1,0 +1,64 @@
+# Hybrid overlay: the lab runs on this computer, but its storage and monitoring
+# are real AWS cloud services (for AWS accounts where servers are not allowed):
+#   Amazon S3          state checkpoints, archive of final windows, Loki log chunks,
+#                      and a JSON-lines copy of the live stream every minute (stream/...)
+#   Amazon CloudWatch  live stream metrics on the "StreamLab" dashboard
+#
+#   docker compose --env-file .env.aws -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build
+#   (or double-click START-LAB-AWS.bat)
+#
+# .env.aws comes from `terraform output -raw env_file` in deploy/aws-hybrid. It holds the
+# keys of a dedicated IAM user that may only touch the StreamLab buckets and metrics.
+
+x-hybrid-env: &hybrid-env
+  SWMA_CLOUD: hybrid
+  AWS_REGION: ${AWS_REGION}
+  S3_ENDPOINT: s3.${AWS_REGION}.amazonaws.com
+  S3_SECURE: "true"
+  S3_REGION: ${AWS_REGION}
+  S3_ACCESS_KEY: ${AWS_ACCESS_KEY_ID}
+  S3_SECRET_KEY: ${AWS_SECRET_ACCESS_KEY}
+  BUCKET_CHECKPOINTS: ${BUCKET_CHECKPOINTS}
+  BUCKET_ARCHIVE: ${BUCKET_ARCHIVE}
+  BUCKET_LOGS: ${BUCKET_LOGS}
+  PUBLIC_S3_CONSOLE_URL: https://${AWS_REGION}.console.aws.amazon.com/s3/buckets/${BUCKET_ARCHIVE}?region=${AWS_REGION}&prefix=stream/
+  PUBLIC_CLOUDWATCH_URL: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards/dashboard/StreamLab
+
+services:
+  bootstrap:
+    environment: *hybrid-env
+  producer:
+    environment: *hybrid-env
+  processor:
+    environment: *hybrid-env
+  api-1:
+    environment: *hybrid-env
+  api-2:
+    environment: *hybrid-env
+  ops-agent:
+    environment: *hybrid-env
+
+  loki:
+    volumes: ["./infra/loki/loki-aws.yml:/etc/loki/loki.yml:ro", "loki:/loki"]
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      BUCKET_LOGS: ${BUCKET_LOGS}
+
+  # Mirrors the stream to CloudWatch Metrics and to S3 (CloudWatch Logs is not used here)
+  cloudwatch:
+    image: swma-lab/api:dev
+    pull_policy: never
+    command: ["python", "-m", "swma.cloud.cloudwatch"]
+    restart: unless-stopped
+    environment:
+      <<: *hybrid-env
+      SWMA_SERVICE: cloudwatch
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      CW_LOGS: "off"
+      S3_STREAM_BUCKET: ${BUCKET_ARCHIVE}
+    labels: {swma.section: "10", swma.role: "AWS bridge (CloudWatch metrics + stream to S3)"}
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
