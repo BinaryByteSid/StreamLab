@@ -1,0 +1,572 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>StreamLab Cookbook</title>
+<style>
+@page { size: A4; margin: 18mm 16mm 18mm 16mm;
+  @top-center { content: "StreamLab Virtual Lab - Architectural Blueprint & Engineering Cookbook"; font: 8.5pt 'Segoe UI', Arial; color: #64748b; }
+  @bottom-right { content: "Page " counter(page); font: 8.5pt 'Segoe UI', Arial; color: #64748b; } }
+@page :first { @top-center { content: none; } @bottom-right { content: none; } }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10.3pt; line-height: 1.45; color: #0f172a; margin: 0; }
+h1 { font-size: 18pt; color: #13286b; border-bottom: 2.5px solid #2563eb; padding-bottom: 4px; margin: 0 0 10px; }
+h2 { font-size: 12.5pt; color: #1e3a8a; margin: 16px 0 6px; break-after: avoid; }
+.src { break-after: avoid; }
+section { page-break-before: always; }
+p { margin: 5px 0 8px; }
+ol, ul { margin: 4px 0 8px 18px; padding: 0; } li { margin: 3px 0; }
+code { font-family: Consolas, 'Cascadia Code', monospace; font-size: 9pt; background: #eef2ff; padding: 0 3px; border-radius: 3px; color: #1e3a8a; }
+pre.code { font-family: Consolas, 'Cascadia Code', monospace; font-size: 8.2pt; line-height: 1.35; background: #0f172a; color: #e2e8f0;
+  padding: 9px 11px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; margin: 3px 0 10px; break-inside: auto; }
+.src { font-size: 8.3pt; color: #475569; margin-top: 8px; font-style: italic; }
+.src code { font-style: normal; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9.1pt; break-inside: auto; }
+th { background: #1e3a8a; color: #fff; text-align: left; padding: 5px 7px; font-weight: 600; }
+td { border-bottom: 1px solid #e2e8f0; padding: 4px 7px; vertical-align: top; }
+tr:nth-child(even) td { background: #f8fafc; }
+tr { break-inside: avoid; }
+.note { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 7px 10px; margin: 8px 0 12px; font-size: 9.5pt; border-radius: 0 6px 6px 0; break-inside: avoid; }
+.cover { height: 255mm; display: flex; flex-direction: column; }
+.cover .band { background: linear-gradient(120deg, #0f2560, #1d4ed8 60%, #0ea5e9); color: #fff; border-radius: 10px; padding: 26px 26px 22px; }
+.cover h1 { color: #fff; border: 0; font-size: 27pt; margin: 0 0 6px; padding: 0; }
+.cover .sub { font-size: 14pt; color: #dbeafe; font-weight: 600; }
+.cover .lead { font-size: 10.8pt; color: #e0e7ff; margin-top: 12px; max-width: 165mm; }
+.cover h2 { margin-top: 22px; }
+.cover .foot { margin-top: auto; font-size: 9pt; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+.toc a { color: #0f172a; text-decoration: none; }
+.toc li { font-size: 11pt; margin: 6px 0; list-style: none; border-bottom: 1px dotted #cbd5e1; padding-bottom: 3px; display: flex; justify-content: space-between; }
+.toc .pg { color: #475569; }
+.toc ol { margin-left: 0; }
+</style></head><body>
+<div class="cover">
+  <div class="band">
+    <h1>StreamLab Virtual Lab</h1>
+    <div class="sub">Streaming Window Metrics Aggregator · Architectural Blueprint &amp; Engineering Cookbook</div>
+    <p class="lead">A practical guide to building a fault-tolerant, event-time stream processor that turns an endless
+    stream of microservice telemetry into correct tumbling- and sliding-window metrics, based on the StreamLab
+    repository. Covers architecture and invariants, the maths of windows, watermarks and incremental aggregation,
+    exactly-once state, scaling, serving, live configuration, observability, AWS deployment and twelve practical
+    recipes with real code.</p>
+  </div>
+  <h2>Stack</h2>
+  <table class=""><thead><tr><th>Component</th><th>Role</th></tr></thead><tbody><tr><td>Redpanda ×3 (Kafka API) + Schema Registry</td><td>Durable, partitioned, replicated event log (RF 3)</td></tr><tr><td>Python stream processor + RocksDB</td><td>Event-time windows, watermark, stateful aggregation, checkpoints</td></tr><tr><td>Redis + FastAPI ×2 behind nginx</td><td>Low-latency results, REST + WebSocket, JWT / API keys, rate limiting</td></tr><tr><td>Consul</td><td>Live configuration and service registry</td></tr><tr><td>Prometheus · Grafana · Loki · Alertmanager</td><td>Metrics, dashboards, logs, alerts</td></tr><tr><td>Docker Compose · GitHub Actions · Terraform · AWS (EC2 / S3 / CloudWatch)</td><td>Packaging, CI/CD, cloud deployment</td></tr></tbody></table>
+  <div class="foot">Repository: github.com/BinaryByteSid/StreamLab · Advanced Cloud Computing mini-project · Code excerpts are generated from the source files.</div>
+</div><section id="toc"><h1>Table of Contents</h1><ol class="toc"><li><a href="#philosophy">1. Architecture &amp; System Design Philosophy</a><span class="pg">3</span></li><li><a href="#dataflow">2. Data Flow &amp; Component Interactions</a><span class="pg">4</span></li><li><a href="#tools">Required Tools</a><span class="pg">5</span></li><li><a href="#r1">Recipe 1: Local Development &amp; One-Click Startup</a><span class="pg">6</span></li><li><a href="#r2">Recipe 2: Event Contract, Schema Registry &amp; Partitioning</a><span class="pg">7</span></li><li><a href="#r3">Recipe 3: Event-Time Windows: Tumbling &amp; Sliding</a><span class="pg">8</span></li><li><a href="#r4">Recipe 4: Watermarks, Allowed Lateness &amp; Idle Partitions</a><span class="pg">9</span></li><li><a href="#r5">Recipe 5: Stateful Incremental Aggregation &amp; Duplicate Detection</a><span class="pg">10</span></li><li><a href="#r6">Recipe 6: Exactly-Once State with RocksDB Checkpoints &amp; S3 Backups</a><span class="pg">12</span></li><li><a href="#r7">Recipe 7: Consumer Groups, Rebalancing, Self-Healing &amp; Autoscaling</a><span class="pg">14</span></li><li><a href="#r8">Recipe 8: Low-Latency Serving: Redis, REST, WebSockets &amp; Security</a><span class="pg">15</span></li><li><a href="#r9">Recipe 9: Control Plane: Live Configuration with Consul</a><span class="pg">16</span></li><li><a href="#r10">Recipe 10: Observability: PromQL, LogQL &amp; Alerts</a><span class="pg">17</span></li><li><a href="#r11">Recipe 11: Cloud Deployment on AWS: Full &amp; Hybrid</a><span class="pg">18</span></li><li><a href="#r12">Recipe 12: Verification, Edge Cases &amp; CI/CD</a><span class="pg">19</span></li><li><a href="#cheat">Quick Reference Cheat Sheet</a><span class="pg">21</span></li></ol></section><section id="philosophy"><h1>1. Architecture &amp; System Design Philosophy</h1>
+<h2>The core problem: an endless, unordered, unreliable stream</h2>
+<p>Microservices emit telemetry forever. Events arrive late and out of order, are delivered at least once (so
+duplicates happen), some are malformed, and any machine can crash at any moment. The aggregator must still
+publish <b>correct</b> per-service metrics (count, sum, average, min, max, error rate, throughput) over
+<b>tumbling</b> and <b>sliding</b> windows with low latency, and keep doing so while it scales and fails.</p>
+<h2>Architectural invariants of this system</h2>
+<ol>
+<li><b>Event time, not arrival time.</b> Every event is placed in the windows of the moment it <i>happened</i>
+(<code>event_time</code>). Arrival order never changes a result inside the out-of-orderness bound.</li>
+<li><b>Key = service = partition owner.</b> The producer keys every event by <code>service</code>, so all events of a
+service land on one Kafka partition and one worker owns that service's window state. No state is ever shared
+between workers.</li>
+<li><b>State and offset move together.</b> A checkpoint writes the window state, the duplicate-detection ids and the
+next Kafka offset in <i>one atomic RocksDB batch</i>. After a crash the new owner restores that batch and replays from
+that offset, so every event is counted <b>exactly once in the state</b> although Kafka delivers at least once.</li>
+<li><b>Results are frozen, never silently rewritten.</b> A window becomes <code>final</code> when the watermark passes
+<code>end + allowed lateness</code>; anything older goes to the dead letter queue with its reason, not into
+published numbers.</li>
+<li><b>Bad data is isolated, never fatal.</b> Deserialisation, schema, time and lateness failures are routed to
+<code>telemetry.dlq</code> with the original payload; the pipeline keeps running.</li>
+<li><b>Everything is observable and controllable at runtime.</b> Every component exports Prometheus metrics and
+JSON logs; every tunable lives in Consul and is applied live; every notable moment is written to a human-readable
+timeline the lab displays.</li>
+</ol>
+<h2>Stack</h2>
+<table class=""><thead><tr><th>Layer (diagram §)</th><th>Technology</th><th>Role</th></tr></thead><tbody><tr><td>1 Event sources</td><td>Python producer</td><td>7 simulated e-commerce microservices, scenarios, chaos injection</td></tr><tr><td>2 Message broker</td><td>Redpanda ×3 (Kafka API), Schema Registry, Console</td><td>Durable partitioned log, RF 3</td></tr><tr><td>3 Stream processing</td><td>Python + confluent-kafka + RocksDB</td><td>Supervisor + 1-4 workers, windows, watermark, state</td></tr><tr><td>4 Storage &amp; serving</td><td>Redis 7, FastAPI ×2</td><td>Latest window results, REST + WebSocket, JWT / API keys</td></tr><tr><td>5 Dashboard</td><td>Static HTML/JS portal (nginx)</td><td>Live dashboard + the virtual lab</td></tr><tr><td>6 Control plane</td><td>Consul</td><td>Live configuration (KV) and service registry</td></tr><tr><td>7-8 DevOps</td><td>Ops agent, Docker Registry, GitHub Actions</td><td>Tests → scan → build → push → rolling deploy</td></tr><tr><td>9 Deployment</td><td>nginx (ALB), RustFS/S3, Terraform</td><td>Local stand-ins; AWS EC2 or hybrid S3 + CloudWatch</td></tr><tr><td>10 Observability</td><td>Prometheus, Grafana, Loki, Alertmanager</td><td>Metrics, dashboards, logs, alerts</td></tr></tbody></table>
+</section><section id="dataflow"><h1>2. Data Flow &amp; Component Interactions</h1>
+<pre class="code">                               INGESTION
+ [7 microservices / Event Lab / edge-case runner]
+        |  JSON event, key = service  (acks=all, idempotent producer)
+        v
+ [Redpanda topic telemetry.events]   4 partitions x RF 3  (leader + 2 followers)
+        |
+        |  consumer group &quot;swma-processors&quot;  (1-4 workers, one owner per partition)
+        v
+ [Worker: per-event pipeline]
+        |-- 1 Deserialize &amp; parse ............. fail -&gt; telemetry.dlq (deserialize_error)
+        |-- 2 Schema validation (registry) .... fail -&gt; telemetry.dlq (schema_invalid)
+        |-- 3 Extract event time .............. fail -&gt; telemetry.dlq (bad_event_time / future)
+        |-- 4 Enrich (team, tier)
+        |-- 5 Duplicate check (event_id) ...... seen -&gt; ignored
+        |-- 6 Watermark = max_event_time - bound   (idle + caught-up -&gt; wall clock)
+        |-- 7 Assign windows: 1 tumbling + size/slide sliding
+        |       &#x27;-- window already final? ..... -&gt; telemetry.dlq (too_late)
+        &#x27;-- 8 Incremental aggregate (count, sum, min, max, errors, cpu, mem)
+        |
+        |  every 0.5 s: trigger  open -&gt; closed -&gt; updated -&gt; final
+        v
+ [Emit]  Redis metrics:&lt;type&gt;:&lt;window_id&gt;  +  pub/sub swma:updates
+         Kafka metrics.windows   +   S3 archive (final windows)
+        |
+        |  every 5 s: checkpoint {windows, dedup ids, next offset} -&gt; RocksDB (atomic)
+        |             then commit offset to Kafka;  every 30 s: snapshot -&gt; S3
+        v
+ [FastAPI x2 behind nginx ALB]  REST /api/v1/*, WebSocket /ws/live, /ws/stream
+        v
+ [Dashboard / virtual lab]          [Prometheus -&gt; Grafana, Alertmanager -&gt; API webhook]</pre>
+<h2>Window life cycle (per service x window)</h2>
+<table class=""><thead><tr><th>Status</th><th>Condition</th><th>What is emitted / done</th></tr></thead><tbody><tr><td><code>open</code></td><td>watermark &lt; end</td><td>Partial result every <code>emit_interval</code> (periodic trigger)</td></tr><tr><td><code>closed</code></td><td>end &le; watermark</td><td>On-time result; late events are still accepted</td></tr><tr><td><code>updated</code></td><td>a late event arrived while closed</td><td>Corrected result is re-emitted</td></tr><tr><td><code>final</code></td><td>end + allowed_lateness &le; watermark</td><td>Last result; state is dropped; later events -&gt; DLQ</td></tr></tbody></table>
+</section><section id="tools"><h1>Required Tools</h1>
+<p>Only Docker is needed to run the lab. The other tools are for the cloud recipes.</p>
+<table class=""><thead><tr><th>Tool</th><th>Used for</th><th>Install (Windows)</th></tr></thead><tbody><tr><td>Docker Desktop (WSL 2)</td><td>Runs all 23 containers</td><td><code>winget install -e --id Docker.DockerDesktop</code></td></tr><tr><td>Git</td><td>Clone / push the repository, CI</td><td><code>winget install -e --id Git.Git</code></td></tr><tr><td>Python 3.12+ (optional)</td><td>Run unit tests and tools on the host</td><td><code>winget install -e --id Python.Python.3.12</code></td></tr><tr><td>Terraform 1.6+</td><td>AWS provisioning (Recipe 11)</td><td>Use AWS CloudShell: <code>sudo dnf install -y terraform</code> after adding the HashiCorp repo</td></tr><tr><td>AWS account + CloudShell</td><td>Cloud recipes</td><td>No local install: CloudShell is signed in already</td></tr></tbody></table>
+<pre class="code">docker version            # engine running?
+docker compose version    # v2
+git --version
+python --version          # optional</pre>
+<div class="note">Docker Desktop needs about 3 GB of free memory for the stack. Stop containers of other projects before a demo if the laptop is busy.</div>
+</section><section id="r1"><h1>Recipe 1: Local Development &amp; One-Click Startup</h1>
+<h2>Step 1: start everything</h2>
+<pre class="code">git clone https://github.com/BinaryByteSid/StreamLab.git
+cd StreamLab
+docker compose up -d --build        # or double-click START-LAB.bat on Windows</pre>
+<p>A one-shot <code>bootstrap</code> container prepares the infrastructure before the pipeline starts: topics with
+replication factor 3, the JSON schema in the registry, default settings and service registrations in Consul, and the
+S3 buckets.</p>
+<div class="src">Source: <code>services/swma/bootstrap.py</code> (lines 75-86)</div><pre class="code ">def kafka() -&gt; None:
+    admin = AdminClient({&quot;bootstrap.servers&quot;: settings.KAFKA_BOOTSTRAP})
+    wait(&quot;kafka cluster (3 brokers)&quot;, lambda: len(admin.list_topics(timeout=5).brokers) &gt;= settings.REPLICATION_FACTOR)
+    existing = admin.list_topics(timeout=10).topics
+    new = [NewTopic(name, num_partitions=parts, replication_factor=settings.REPLICATION_FACTOR, config=cfg)
+           for name, parts, cfg, _ in TOPICS if name not in existing]
+    for name, fut in (admin.create_topics(new).items() if new else []):
+        try:
+            fut.result()
+            log.info(&quot;created topic %s&quot;, name)
+        except Exception as exc:
+            log.warning(&quot;topic %s: %s&quot;, name, exc)</pre>
+<h2>Step 2: open the lab and the tools</h2>
+<table class=""><thead><tr><th>URL</th><th>What</th></tr></thead><tbody><tr><td>http://localhost:8080</td><td>Virtual lab + dashboard (nginx ALB → api-1 / api-2)</td></tr><tr><td>http://localhost:8081</td><td>Redpanda Console (topics, messages, consumer groups)</td></tr><tr><td>http://localhost:3001</td><td>Grafana (admin / streamlab)</td></tr><tr><td>http://localhost:9091 · :9093</td><td>Prometheus · Alertmanager</td></tr><tr><td>http://localhost:8500</td><td>Consul UI (key/value config, service health)</td></tr><tr><td>http://localhost:5540</td><td>RedisInsight</td></tr><tr><td>http://localhost:9001/rustfs/console/</td><td>S3 console (streamlab / streamlab-secret)</td></tr><tr><td>http://localhost:5080</td><td>Container registry UI</td></tr><tr><td>localhost:29092-29094</td><td>Kafka for your own clients</td></tr></tbody></table>
+<h2>Step 3: stop or reset</h2>
+<pre class="code">docker compose down        # keep all data
+docker compose down -v     # delete all volumes (fresh start)</pre>
+</section><section id="r2"><h1>Recipe 2: Event Contract, Schema Registry &amp; Partitioning</h1>
+<p>The event model follows the project document. The same JSON Schema is registered in the Redpanda Schema
+Registry (<code>telemetry.events-value</code>) and fetched by every worker at start-up.</p>
+<div class="src">Source: <code>services/swma/common/schema.py</code> (lines 14-39)</div><pre class="code ">EVENT_SCHEMA: dict = {
+    &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+    &quot;$id&quot;: &quot;https://streamlab.local/schemas/telemetry-event-v1.json&quot;,
+    &quot;title&quot;: &quot;TelemetryEvent&quot;,
+    &quot;description&quot;: &quot;One request handled by an e-commerce microservice.&quot;,
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;required&quot;: [&quot;event_id&quot;, &quot;service&quot;, &quot;event_time&quot;, &quot;response_time_ms&quot;, &quot;status_code&quot;],
+    &quot;properties&quot;: {
+        &quot;event_id&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 3, &quot;maxLength&quot;: 100,
+                     &quot;description&quot;: &quot;Unique id, used for duplicate detection&quot;},
+        &quot;service&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;pattern&quot;: &quot;^[a-z][a-z0-9-]{1,40}$&quot;,
+                    &quot;description&quot;: &quot;Microservice that produced the event (also the Kafka key)&quot;},
+        &quot;event_time&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;minLength&quot;: 10,
+                       &quot;description&quot;: &quot;When the request happened, ISO-8601 UTC&quot;},
+        &quot;endpoint&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;method&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;response_time_ms&quot;: {&quot;type&quot;: &quot;number&quot;, &quot;minimum&quot;: 0, &quot;maximum&quot;: 600000},
+        &quot;status_code&quot;: {&quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 100, &quot;maximum&quot;: 599},
+        &quot;cpu_percent&quot;: {&quot;type&quot;: &quot;number&quot;, &quot;minimum&quot;: 0, &quot;maximum&quot;: 100},
+        &quot;memory_percent&quot;: {&quot;type&quot;: &quot;number&quot;, &quot;minimum&quot;: 0, &quot;maximum&quot;: 100},
+        &quot;region&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;source&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;trace&quot;: {&quot;type&quot;: &quot;boolean&quot;, &quot;description&quot;: &quot;Lab only: record this event&#x27;s journey&quot;},
+    },
+    &quot;additionalProperties&quot;: True,
+}</pre>
+<h2>Keys decide partitions</h2>
+<p>The producer sends every event with <code>key = service</code>. confluent-kafka's default partitioner is
+<code>CRC32(key) mod partitions</code>, so the mapping is fixed and visible:</p>
+<table class=""><thead><tr><th>Partition</th><th>Services (CRC32 mod 4)</th><th>Share of traffic</th></tr></thead><tbody><tr><td>0</td><td>order-service, cart-service</td><td>~29%</td></tr><tr><td>1</td><td>api-gateway, payment-service, user-service</td><td>~43%</td></tr><tr><td>2</td><td>(none)</td><td>0%: idle</td></tr><tr><td>3</td><td>product-service, inventory-service</td><td>~29%</td></tr></tbody></table>
+<div class="note"><b>Data skew is a design lesson, not a bug.</b> With four partitions and seven keys one partition is idle and one carries 43% of the load. Adding workers cannot split a partition; you must change the key or the partition count.</div>
+<div class="src">Source: <code>services/swma/producer/__main__.py</code> (lines 180-183)</div><pre class="code ">    def _send(self, ev: dict) -&gt; None:
+        self.kafka.produce(settings.TOPIC_EVENTS, key=ev[&quot;service&quot;].encode(), value=json.dumps(ev).encode(),
+                           on_delivery=self.delivered)
+        self.sent_window.append(time.time())</pre>
+</section><section id="r3"><h1>Recipe 3: Event-Time Windows: Tumbling &amp; Sliding</h1>
+<h2>Mathematical formulation</h2>
+<p>Windows are epoch-aligned and <b>half-open</b> <code>[start, end)</code>. For an event at time <i>t</i> (ms):</p>
+<pre class="code">tumbling:  start = t - (t mod size)                 -&gt; exactly 1 window
+sliding :  starts = { s : s = t - (t mod slide) - k*slide,  s &gt; t - size }   -&gt; size / slide windows
+           size 60 s, slide 10 s  =&gt;  6 windows per event</pre>
+<div class="src">Source: <code>services/swma/engine/windows.py</code> (lines 9-12)</div><pre class="code ">def tumbling(ts_ms: int, size_ms: int) -&gt; list[tuple[int, int]]:
+    &quot;&quot;&quot;Each event belongs to exactly one tumbling window.&quot;&quot;&quot;
+    start = ts_ms - (ts_ms % size_ms)
+    return [(start, start + size_ms)]</pre>
+<div class="src">Source: <code>services/swma/engine/windows.py</code> (lines 15-26)</div><pre class="code ">def sliding(ts_ms: int, size_ms: int, slide_ms: int) -&gt; list[tuple[int, int]]:
+    &quot;&quot;&quot;Each event belongs to every window with ``start &lt;= ts &lt; start + size``.
+
+    With size=60s and slide=10s that is 6 overlapping windows.
+    &quot;&quot;&quot;
+    out = []
+    start = ts_ms - (ts_ms % slide_ms)
+    while start &gt; ts_ms - size_ms:
+        out.append((start, start + size_ms))
+        start -= slide_ms
+    out.reverse()
+    return out</pre>
+<div class="note">An event at exactly <code>10:01:00.000</code> belongs to <code>[10:01:00, 10:02:00)</code>, not to the window that ends there. The edge-case suite checks this at 1 ms resolution.</div>
+<p>Changing the size or slide in the control plane affects new windows only; open windows keep their boundaries
+(the window key contains start <i>and</i> end).</p>
+</section><section id="r4"><h1>Recipe 4: Watermarks, Allowed Lateness &amp; Idle Partitions</h1>
+<h2>Bounded out-of-orderness</h2>
+<pre class="code">watermark(p) = max( watermark(p), max_event_time(p) - bound )      monotonic, per partition
+closed  when  end            &lt;= watermark
+final   when  end + lateness &lt;= watermark</pre>
+<p>Defaults: bound 5 s, allowed lateness 10 s, idle timeout 30 s. More lateness means more complete results but
+later final answers and more state held in memory.</p>
+<h2>Idle partitions, done safely</h2>
+<p>If the producer stops, no event moves the watermark and the last windows would never close. So an idle partition's
+watermark follows the wall clock, but <b>only when the consumer has caught up</b> (position = high-water mark).
+Otherwise a worker that is merely catching up after a restart would mark its own backlog as "too late".</p>
+<div class="src">Source: <code>services/swma/engine/watermark.py</code> (lines 34-41)</div><pre class="code ">    def value(self, wall_ms: int, idle_allowed: bool = True) -&gt; int | None:
+        candidate = None if self.max_event_ts is None else self.max_event_ts - self.bound_ms
+        if idle_allowed and self.is_idle(wall_ms):
+            idle = wall_ms - self.idle_timeout_ms - self.bound_ms
+            candidate = idle if candidate is None else max(candidate, idle)
+        if candidate is not None and (self.current is None or candidate &gt; self.current):
+            self.current = candidate
+        return self.current</pre>
+<div class="src">Source: <code>services/swma/processor/worker.py</code> (lines 387-392)</div><pre class="code ">            try:
+                lo, hi = self.consumer.get_watermark_offsets(TopicPartition(settings.TOPIC_EVENTS, p),
+                                                             timeout=1, cached=False)
+                pos = eng.next_offset if eng.next_offset is not None else lo
+                eng.caught_up = pos &gt;= hi  # only now may an idle partition&#x27;s watermark follow the clock
+            except KafkaException:</pre>
+<div class="note">A clock-skewed event from the future is clamped to the wall clock in <code>observe()</code>, so it cannot drag the watermark ahead and close windows early. Events more than 5 minutes ahead are rejected.</div>
+</section><section id="r5"><h1>Recipe 5: Stateful Incremental Aggregation &amp; Duplicate Detection</h1>
+<p>The aggregate never stores events, only running values, so memory per window is constant:</p>
+<pre class="code">count &lt;- count + 1          min &lt;- min(min, latency)       errors &lt;- errors + [status &gt;= 500]
+sum   &lt;- sum + latency      max &lt;- max(max, latency)       avg = sum / count   (on emission)</pre>
+<div class="src">Source: <code>services/swma/engine/aggregate.py</code> (lines 33-52)</div><pre class="code ">    def add(self, latency: float, status: int, ts: int, cpu: float | None = None,
+            mem: float | None = None, late: bool = False) -&gt; None:
+        self.count += 1
+        self.sum += latency
+        self.min = latency if self.min is None else min(self.min, latency)
+        self.max = latency if self.max is None else max(self.max, latency)
+        if status &gt;= 500:
+            self.errors += 1
+        elif status &gt;= 400:
+            self.client_errors += 1
+        if cpu is not None:
+            self.cpu_sum += cpu
+            self.cpu_n += 1
+        if mem is not None:
+            self.mem_sum += mem
+            self.mem_n += 1
+        if late:
+            self.late += 1
+        self.first_ts = ts if self.first_ts is None else min(self.first_ts, ts)
+        self.last_ts = ts if self.last_ts is None else max(self.last_ts, ts)</pre>
+<h2>Processing one event</h2>
+<p>The per-partition engine checks duplicates, reads the watermark, updates every window the event belongs to,
+and classifies the event (<code>on_time</code>, <code>out_of_order</code>, <code>late_accepted</code>,
+<code>too_late</code>, <code>duplicate</code>).</p>
+<div class="src">Source: <code>services/swma/engine/engine.py</code> (lines 133-181)</div><pre class="code ">    def process(self, event: dict, ts: int, wall_ms: int) -&gt; Outcome:
+        eid, service = event[&quot;event_id&quot;], event[&quot;service&quot;]
+        if self.cfg.dedup and eid in self.dedup:
+            self.counters[&quot;duplicate&quot;] += 1
+            return Outcome(&quot;duplicate&quot;, [], [], self.wm.current)
+
+        wm = self.wm.value(wall_ms, self.caught_up)
+        prev_max = self.wm.max_event_ts
+        lateness = self.cfg.lateness_ms
+        assigned, dropped, any_late = [], [], False
+        latency = float(event[&quot;response_time_ms&quot;])
+        status = int(event[&quot;status_code&quot;])
+        cpu, mem = event.get(&quot;cpu_percent&quot;), event.get(&quot;memory_percent&quot;)
+
+        for wtype, start, end in self.assign(ts):
+            info = {&quot;window_type&quot;: wtype, &quot;window_id&quot;: window_id(start, end), &quot;start&quot;: start, &quot;end&quot;: end}
+            if wm is not None and end + lateness &lt;= wm:
+                dropped.append(info)
+                continue
+            key = (wtype, service, start, end)
+            w = self.windows.get(key)
+            if w is None:
+                phase = &quot;closed&quot; if (wm is not None and end &lt;= wm) else &quot;open&quot;
+                w = WindowState(wtype, service, start, end, phase, event.get(&quot;team&quot;), event.get(&quot;tier&quot;))
+                self.windows[key] = w
+            late = wm is not None and end &lt;= wm
+            w.agg.add(latency, status, ts, cpu, mem, late)
+            w.dirty = True
+            self._changed.add(key)
+            any_late = any_late or late
+            assigned.append({**info, &quot;late&quot;: late})
+
+        if not assigned:
+            self.counters[&quot;too_late&quot;] += 1
+            return Outcome(&quot;too_late&quot;, [], dropped, wm)
+
+        if self.cfg.dedup:
+            self.dedup[eid] = ts
+            self._dedup_added.add(eid)
+        self.wm.observe(ts, wall_ms)
+
+        if any_late:
+            kind = &quot;late_accepted&quot;
+        elif prev_max is not None and ts &lt; prev_max:
+            kind = &quot;out_of_order&quot;
+        else:
+            kind = &quot;on_time&quot;
+        self.counters[kind] += 1
+        return Outcome(kind, assigned, dropped, wm)</pre>
+<div class="note">Duplicate ids are remembered only as long as a duplicate could still change a window: <code>horizon = watermark - max(window size) - lateness</code>. Older ids are garbage-collected.</div>
+</section><section id="r6"><h1>Recipe 6: Exactly-Once State with RocksDB Checkpoints &amp; S3 Backups</h1>
+<h2>Atomic checkpoint</h2>
+<p>Every <code>checkpoint_interval</code> (5 s) each worker writes, per partition, only what changed (window states,
+new and expired dedup ids, watermark, counters, <b>next offset</b>) in one RocksDB <code>WriteBatch</code>, then commits
+that offset to Kafka. DLQ and result messages are flushed first, so an offset is never committed before its side
+effects are durable.</p>
+<div class="src">Source: <code>services/swma/processor/worker.py</code> (lines 321-339)</div><pre class="code ">    def checkpoint(self, sync: bool = False, only: list[int] | None = None) -&gt; None:
+        self.producer.flush(5)  # DLQ + results must be durable before offsets move
+        offsets = []
+        for p in (only if only is not None else list(self.engines)):
+            eng, store = self.engines.get(p), self.stores.get(p)
+            if eng is None or store is None:
+                continue
+            t0 = time.time()
+            puts, deletes = eng.drain_changes()
+            store.write(puts, deletes)
+            M.CHECKPOINT_SECONDS.observe(time.time() - t0)
+            if eng.next_offset is not None:
+                offsets.append(TopicPartition(settings.TOPIC_EVENTS, p, eng.next_offset))
+        if offsets:
+            try:
+                self.consumer.commit(offsets=offsets, asynchronous=not sync)
+            except KafkaException as exc:
+                self.log.warning(&quot;offset commit failed: %s&quot;, exc)
+        M.CHECKPOINTS.labels(self.id).inc()</pre>
+<h2>Restore on assignment</h2>
+<div class="src">Source: <code>services/swma/processor/worker.py</code> (lines 88-123)</div><pre class="code ">    def on_assign(self, consumer: Consumer, partitions: list[TopicPartition]) -&gt; None:
+        wall = now_ms()
+        for tp in partitions:
+            p = tp.partition
+            store = StateStore(settings.STATE_DIR, p)
+            eng = PartitionEngine(p, self.ecfg)
+            source, windows = &quot;empty&quot;, 0
+            if not store.is_empty():
+                windows = eng.restore(store.items(), wall)
+                source = &quot;rocksdb&quot;
+            else:
+                snap = self._s3_restore(p)
+                if snap:
+                    windows = eng.restore(snap[&quot;items&quot;].items(), wall)
+                    store.replace_all(snap[&quot;items&quot;])
+                    source = &quot;s3&quot;
+            tp.offset = eng.next_offset if eng.next_offset is not None else OFFSET_STORED
+            self.engines[p], self.stores[p], self.restored_from[p] = eng, store, source
+            M.RESTORES.labels(source).inc()
+            M.OWNER.labels(str(p), self.id).set(1)
+            seen = self.r.get(f&quot;lab:partition:{p}:processed&quot;)
+            replay = None
+            if seen and eng.next_offset is not None:
+                replay = max(0, int(seen) - eng.next_offset)
+            where = {&quot;rocksdb&quot;: &quot;its RocksDB checkpoint&quot;, &quot;s3&quot;: &quot;the S3 backup&quot;,
+                     &quot;empty&quot;: &quot;nothing (fresh start; reading from the committed Kafka offset)&quot;}[source]
+            msg = f&quot;{self.id} took partition {p}: restored {windows} windows from {where}&quot;
+            if eng.next_offset is not None:
+                msg += f&quot;, resuming at offset {eng.next_offset}&quot;
+            if replay:
+                msg += f&quot; ({replay} events will be replayed)&quot;
+            labbus.emit(self.r, &quot;assign&quot;, msg, worker=self.id, partition=p, source=source,
+                        offset=eng.next_offset, windows=windows, replay=replay)
+            self.log.info(msg)
+        M.REBALANCES.labels(self.id, &quot;assign&quot;).inc()
+        consumer.assign(partitions)</pre>
+<h2>Why this is exactly-once for the state</h2>
+<pre class="code">crash after checkpoint C (offset o_C) and before checkpoint C+1
+new owner: state := RocksDB(C) ;  seek(o_C) ;  replay events o_C .. o_crash
+=&gt; every event before o_C is in the state once (it was in C),
+   every event from o_C on is applied once (replayed into a state that never saw it)</pre>
+<div class="note">Output to Redis is idempotent (each emission overwrites the window's full result). The <code>metrics.windows</code> topic is at-least-once. Every 30 s a full snapshot also goes to S3; if the local disk is lost the new owner restores from S3 and replays from the snapshot's offset.</div>
+</section><section id="r7"><h1>Recipe 7: Consumer Groups, Rebalancing, Self-Healing &amp; Autoscaling</h1>
+<p>The <code>processor</code> container runs a supervisor that starts 1-4 worker processes. Each is a member of
+consumer group <code>swma-processors</code>; Kafka gives every partition to exactly one member and rebalances when one
+joins, leaves gracefully (SIGTERM: checkpoint, leave) or crashes (SIGKILL: detected after the 6 s session timeout).</p>
+<h2>Self-healing</h2>
+<p>A crashed worker is restarted after <code>restart_delay_s</code> (8 s), long enough to watch the partitions move.</p>
+<h2>Autoscaling on consumer lag</h2>
+<pre class="code">lag(p) = high_watermark(p) - next_offset(p)          (live, reported by the owning worker)
+scale up   if  sum lag &gt; scale_up_lag   and cooled down and workers &lt; max
+scale down if  sum lag &lt; scale_down_lag for a whole cooldown and workers &gt; min</pre>
+<div class="src">Source: <code>services/swma/processor/supervisor.py</code> (lines 255-284)</div><pre class="code ">    def autoscale(self) -&gt; None:
+        c = self.cfg.snapshot()
+        lo, hi = c[&quot;scaling/min_workers&quot;], max(c[&quot;scaling/min_workers&quot;], c[&quot;scaling/max_workers&quot;])
+        if c[&quot;scaling/mode&quot;] == &quot;manual&quot;:
+            new = max(1, min(settings.MAX_WORKERS, c[&quot;scaling/desired_workers&quot;]))
+            if new != self.target:
+                self.record(&quot;manual&quot;, self.target, new, &quot;desired workers changed in the Control Plane&quot;)
+                self.target = new
+            return
+        lag, now = self.lag[&quot;live_total&quot;], time.time()
+        cooled = now - self.last_scale &gt;= c[&quot;scaling/cooldown_s&quot;]
+        if self.target &lt; lo or self.target &gt; hi:
+            new = max(lo, min(hi, self.target))
+            self.record(&quot;policy&quot;, self.target, new, f&quot;keeping workers within min={lo} / max={hi}&quot;)
+            self.target = new
+            return
+        if lag &gt; c[&quot;scaling/scale_up_lag&quot;] and self.target &lt; hi and cooled:
+            self.record(&quot;up&quot;, self.target, self.target + 1,
+                        f&quot;lag {lag} &gt; scale-up threshold {c[&#x27;scaling/scale_up_lag&#x27;]}&quot;)
+            self.target += 1
+        if lag &lt; c[&quot;scaling/scale_down_lag&quot;]:
+            self.low_since = self.low_since or now
+            if self.target &gt; lo and cooled and now - self.low_since &gt;= c[&quot;scaling/cooldown_s&quot;]:
+                self.record(&quot;down&quot;, self.target, self.target - 1,
+                            f&quot;lag {lag} &lt; scale-down threshold {c[&#x27;scaling/scale_down_lag&#x27;]} &quot;
+                            f&quot;for {c[&#x27;scaling/cooldown_s&#x27;]}s&quot;)
+                self.target -= 1
+                self.low_since = now
+        else:
+            self.low_since = None</pre>
+</section><section id="r8"><h1>Recipe 8: Low-Latency Serving: Redis, REST, WebSockets &amp; Security</h1>
+<h2>Redis key design</h2>
+<table class=""><thead><tr><th>Key</th><th>Type</th><th>Content</th></tr></thead><tbody><tr><td><code>metrics:tumbling:&lt;window_id&gt;</code></td><td>hash</td><td>one field per service: the window's latest result JSON</td></tr><tr><td><code>metrics:sliding:&lt;window_id&gt;</code></td><td>hash</td><td>same for sliding windows</td></tr><tr><td><code>metrics:latest|last_closed:&lt;type&gt;:&lt;service&gt;</code></td><td>hash</td><td>newest window / newest complete window</td></tr><tr><td><code>metrics:history:&lt;type&gt;:&lt;service&gt;</code></td><td>sorted set</td><td>window ids by start time (last 300)</td></tr><tr><td>pub/sub <code>swma:updates</code></td><td>channel</td><td>every emission, forwarded to browsers over <code>/ws/live</code></td></tr></tbody></table>
+<p>A Lua script makes the "latest" pointers race-free: an older window can never overwrite a newer one.</p>
+<div class="src">Source: <code>services/swma/processor/worker.py</code> (lines 33-41)</div><pre class="code ">SET_IF_NEWER = &quot;&quot;&quot;
+local cur = redis.call(&#x27;HGET&#x27;, KEYS[1], &#x27;start_ms&#x27;)
+if (not cur) or tonumber(ARGV[1]) &gt;= tonumber(cur) then
+  redis.call(&#x27;HSET&#x27;, KEYS[1], &#x27;start_ms&#x27;, ARGV[1], &#x27;json&#x27;, ARGV[2])
+  redis.call(&#x27;EXPIRE&#x27;, KEYS[1], ARGV[3])
+  return 1
+end
+return 0
+&quot;&quot;&quot;</pre>
+<h2>Authentication and rate limiting</h2>
+<p>Public reads (<code>/api/v1/*</code>) need an API key (<code>X-API-Key</code>) or a JWT; actions that change the system
+need an admin JWT from <code>POST /api/auth/token</code>. A token bucket in Redis, shared by both API replicas,
+answers <code>429</code> with <code>Retry-After</code>:</p>
+<pre class="code">tokens := min(burst, tokens + elapsed_s * rate) ;  allow if tokens &gt;= 1 (then tokens -= 1)</pre>
+<div class="src">Source: <code>services/swma/api/deps.py</code> (lines 23-34)</div><pre class="code ">TOKEN_BUCKET = &quot;&quot;&quot;
+local b = redis.call(&#x27;HMGET&#x27;, KEYS[1], &#x27;tokens&#x27;, &#x27;ts&#x27;)
+local rate, burst, now = tonumber(ARGV[1]), tonumber(ARGV[2]), tonumber(ARGV[3])
+local tokens = tonumber(b[1]) or burst
+local ts = tonumber(b[2]) or now
+tokens = math.min(burst, tokens + (now - ts) / 1000 * rate)
+local allowed = 0
+if tokens &gt;= 1 then tokens = tokens - 1 allowed = 1 end
+redis.call(&#x27;HSET&#x27;, KEYS[1], &#x27;tokens&#x27;, tokens, &#x27;ts&#x27;, now)
+redis.call(&#x27;PEXPIRE&#x27;, KEYS[1], 60000)
+return {allowed, tostring(tokens)}
+&quot;&quot;&quot;</pre>
+</section><section id="r9"><h1>Recipe 9: Control Plane: Live Configuration with Consul</h1>
+<p>37 settings (window size and slide, allowed lateness, watermark bound, triggers, feature flags, scaling policy,
+producer rate and scenario, chaos percentages, rate limits, alert thresholds) live under <code>swma/config/</code> in
+Consul KV. Each service keeps a <b>blocking query</b> open; Consul answers the moment anything changes, so new values
+apply in about a second without restarts.</p>
+<div class="src">Source: <code>services/swma/common/config.py</code> (lines 190-199)</div><pre class="code ">    def _fetch(self, index: int, wait: str | None = &quot;25s&quot;):
+        params = {&quot;recurse&quot;: &quot;true&quot;}
+        if wait:
+            params.update(index=str(index), wait=wait)
+        r = httpx.get(f&quot;{self.url}/v1/kv/{PREFIX}&quot;, params=params, timeout=35)
+        new_index = int(r.headers.get(&quot;X-Consul-Index&quot;, &quot;0&quot;) or 0)
+        if r.status_code == 404:
+            return [], new_index
+        r.raise_for_status()
+        return r.json(), new_index</pre>
+<h2>Three ways to change a setting</h2>
+<pre class="code"># 1. Admin UI: lab -&gt; &quot;6 · Control plane&quot; -&gt; Save (writes an audit entry)
+# 2. CLI inside the stack
+docker compose exec api-1 python -m swma.cli set window/tumbling_size_s 30
+docker compose exec api-1 python -m swma.cli list
+# 3. REST
+curl -X PUT localhost:8080/api/lab/config -H &quot;Authorization: Bearer $JWT&quot; \
+     -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;window/allowed_lateness_s&quot;: 20}&#x27;</pre>
+<div class="note">Alert thresholds also live in Consul. The supervisor exports them as Prometheus gauges, and the alert rules compare against those gauges, so a threshold changed in the UI changes the alert live.</div>
+</section><section id="r10"><h1>Recipe 10: Observability: PromQL, LogQL &amp; Alerts</h1>
+<h2>Useful PromQL</h2>
+<pre class="code">sum(rate(swma_producer_events_total[1m]))                                   # events in / s
+sum(rate(swma_processor_events_total{outcome!=&quot;invalid&quot;}[1m]))             # events out / s
+sum by (outcome) (rate(swma_processor_events_total[1m]))                   # on_time, out_of_order, ...
+swma_group_lag_total                                                         # committed consumer lag
+histogram_quantile(0.95, sum(rate(swma_processing_latency_seconds_bucket[1m])) by (le))  # p95
+sum by (reason) (increase(swma_processor_dlq_total[1h]))                    # dead letters by reason
+swma_window_avg_latency_ms{window_type=&quot;sliding&quot;}                            # business metric per service</pre>
+<h2>Alert rules (thresholds from Consul)</h2>
+<div class="src">Source: <code>infra/prometheus/alerts.yml</code> (lines 6-13)</div><pre class="code ">      - alert: HighServiceLatency
+        expr: swma_window_avg_latency_ms{window_type=&quot;sliding&quot;} &gt; scalar(swma_config_alert_latency_ms)
+        for: 10s
+        labels: {severity: warning, section: &quot;12&quot;}
+        annotations:
+          summary: &#x27;{{ $labels.service }} average latency {{ $value | printf &quot;%.0f&quot; }} ms&#x27;
+          description: The latest 60s sliding window average is above the threshold set in the Control Plane.
+      - alert: HighErrorRate</pre>
+<h2>Useful LogQL (Loki, chunks stored in S3)</h2>
+<pre class="code">{kind=&quot;audit&quot;}                                   # who changed what
+{kind=&quot;error&quot;}                                   # all errors
+{service=&quot;processor&quot;} |= &quot;restored&quot;              # state restores after rebalances
+sum by (service) (rate({kind=~&quot;.+&quot;}[1m]))        # log volume per service</pre>
+<table class=""><thead><tr><th>Grafana dashboard</th><th>Shows</th></tr></thead><tbody><tr><td>1. Pipeline overview</td><td>throughput in/out, lag per partition, outcomes, stages, workers, watermark delay, checkpoints, retries</td></tr><tr><td>2. Microservice metrics</td><td>latency, error rate and requests per service from window results</td></tr><tr><td>3. Kafka, Redis, API &amp; containers</td><td>brokers, under-replicated partitions, Redis, API rate and 429s, container CPU / memory</td></tr><tr><td>4. Logs</td><td>log volume, errors, audit log, all logs</td></tr></tbody></table>
+</section><section id="r11"><h1>Recipe 11: Cloud Deployment on AWS: Full &amp; Hybrid</h1>
+<h2>Option A: everything on EC2 (<code>deploy/aws</code>)</h2>
+<p>Terraform creates a VPC and security group (ports 80 and 3000 only), an <code>m7i-flex.large</code> EC2 instance
+with an Elastic IP, three S3 buckets, CloudWatch log groups, dashboard and alarms, SNS e-mail, an AWS Budget and a
+least-privilege IAM role (no keys on the server). User-data installs Docker and starts the stack with
+<code>docker-compose.aws.yml</code>.</p>
+<pre class="code"># AWS CloudShell
+git clone https://github.com/BinaryByteSid/StreamLab.git &amp;&amp; cd StreamLab/deploy/aws/terraform
+export TF_DATA_DIR=/tmp/tfdata &amp;&amp; terraform init &amp;&amp; terraform apply -var=&quot;alert_email=you@example.com&quot;
+terraform output            # lab_url, grafana_url, cloudwatch_dashboard, ...</pre>
+<h2>Option B: hybrid (<code>deploy/aws-hybrid</code>), for accounts that may not run servers</h2>
+<p>Some sandbox accounts deny EC2, Lightsail, Lambda and ECS through an organization policy but allow S3,
+CloudWatch and IAM. The lab then runs locally and uses those services: checkpoints, archive, Loki chunks and a
+per-minute JSON-lines copy of the live stream in <b>Amazon S3</b>, live metrics on a <b>CloudWatch</b> dashboard.</p>
+<pre class="code">cd StreamLab/deploy/aws-hybrid &amp;&amp; export TF_DATA_DIR=/tmp/tfdata &amp;&amp; terraform init &amp;&amp; terraform apply
+terraform output -raw env_file      # -&gt; save as VirtualLab/.env.aws on the laptop
+# laptop:  START-LAB-AWS.bat   (compose with docker-compose.hybrid.yml)</pre>
+<h2>Least-privilege runtime policy</h2>
+<div class="src">Source: <code>deploy/aws-hybrid/main.tf</code> (lines 73-87)</div><pre class="code ">resource &quot;aws_iam_user_policy&quot; &quot;lab&quot; {
+  name = &quot;streamlab-runtime&quot;
+  user = aws_iam_user.lab.name
+  policy = jsonencode({
+    Version = &quot;2012-10-17&quot;
+    Statement = [
+      { Effect = &quot;Allow&quot;, Action = [&quot;s3:ListBucket&quot;, &quot;s3:GetBucketLocation&quot;],
+      Resource = [for b in aws_s3_bucket.lab : b.arn] },
+      { Effect = &quot;Allow&quot;, Action = [&quot;s3:GetObject&quot;, &quot;s3:PutObject&quot;, &quot;s3:DeleteObject&quot;],
+      Resource = [for b in aws_s3_bucket.lab : &quot;${b.arn}/*&quot;] },
+      { Effect = &quot;Allow&quot;, Action = &quot;cloudwatch:PutMetricData&quot;, Resource = &quot;*&quot;,
+      Condition = { StringEquals = { &quot;cloudwatch:namespace&quot; = &quot;StreamLab&quot; } } },
+    ]
+  })
+}</pre>
+<div class="note">Diagnose an organization block quickly: <code>aws ec2 describe-availability-zones --region ap-south-1</code> returning <i>explicit deny in a service control policy</i> means no Terraform change can help; use the hybrid mode.</div>
+</section><section id="r12"><h1>Recipe 12: Verification, Edge Cases &amp; CI/CD</h1>
+<h2>Unit and end-to-end tests</h2>
+<pre class="code">docker compose exec -T api-1 python -m pytest tests/unit -q                       # 17 tests
+docker compose exec -T -e STREAMLAB_E2E=1 api-1 python -m pytest tests/e2e -q     # 7 tests, live stack</pre>
+<p>The unit suite covers window boundaries, sliding membership, aggregation maths, watermark monotonicity, idle
+handling, out-of-order, late and too-late events, duplicates, a comparison with a batch reference implementation on
+600 shuffled events, and crash recovery (checkpoint, crash, replay, exact count).</p>
+<div class="src">Source: <code>services/tests/unit/test_engine.py</code> (lines 92-110)</div><pre class="code ">def test_crash_recovery_from_checkpoint_gives_exact_counts():
+    events = [ev(i, T0 + i * 100) for i in range(500)]
+    # Uninterrupted run
+    a = PartitionEngine(0, CFG)
+    run(a, events)
+    # Crashing run: checkpoint after 200 events, keep processing, then &quot;crash&quot;
+    b = PartitionEngine(0, CFG)
+    run(b, events[:200])
+    b.next_offset = 200
+    store = {}
+    puts, deletes = b.drain_changes()
+    store.update(puts)
+    run(b, events[200:350])  # processed but never checkpointed -&gt; lost in the crash
+    c = PartitionEngine(0, CFG)
+    c.restore(store.items(), T0 + 50_000)
+    assert c.next_offset == 200
+    run(c, events[c.next_offset:])  # replay from the checkpointed offset
+    key = (&quot;tumbling&quot;, &quot;payment-service&quot;, T0, T0 + 60_000)
+    assert c.windows[key].agg.count == a.windows[key].agg.count == 500</pre>
+<h2>Self-checking edge cases on the live pipeline</h2>
+<p>Lab page <i>Edge cases &amp; stress tests</i> (API <code>POST /api/lab/edge/run</code>). Each run uses throw-away
+services and verifies the outcome. Measured on the reference laptop:</p>
+<table class=""><thead><tr><th>Scenario</th><th>Result</th></tr></thead><tbody><tr><td>1,000 events at the same instant</td><td>sent in 0.03 s (~35,000 ev/s), 4 partitions, all 1,000 counted once in 0.7 s</td></tr><tr><td>Hot key (one service)</td><td>1 partition, in order, all counted</td></tr><tr><td>Every event sent 3 times</td><td>900 messages, counted 300</td></tr><tr><td>Out-of-order within the bound</td><td>500 counted, 0 dead letters</td></tr><tr><td>Older than allowed lateness</td><td>200 / 200 to DLQ (too_late), no final window changed</td></tr><tr><td>8 kinds of malformed events</td><td>120 / 120 to DLQ with reasons, stream unaffected</td></tr><tr><td>Clock skew +1 min / +10 min</td><td>accepted 50 / rejected 50</td></tr><tr><td>Exact window boundary (±1 ms)</td><td>half-open windows confirmed</td></tr><tr><td>200 KB / 2.2 MB message</td><td>processed / refused by Kafka (message too large)</td></tr><tr><td>Worker killed mid-burst (3,000 events)</td><td>lag peak 1,569, recovered in 7.8 s, exactly 3,000 counted</td></tr></tbody></table>
+<h2>CI/CD</h2>
+<p>Locally the ops agent runs: commit info, pytest, bandit, Docker build of 5 images, push to the registry, rolling
+restart of both API replicas behind the load balancer (measured: 449 requests, 0 failed). On GitHub,
+<code>.github/workflows/ci.yml</code> runs unit tests, bandit + Trivy, the full-stack e2e suite and image builds.</p>
+</section><section id="cheat"><h1>Quick Reference Cheat Sheet</h1>
+<h2>REST API (via http://localhost:8080)</h2>
+<table class=""><thead><tr><th>Endpoint</th><th>Method</th><th>Auth</th><th>Purpose</th></tr></thead><tbody><tr><td>/api/v1/metrics?window_type=</td><td>GET</td><td>API key</td><td>Latest complete + live window for every service</td></tr><tr><td>/api/v1/metrics/{service}[/latest|/history]</td><td>GET</td><td>API key</td><td>One service, latest or history</td></tr><tr><td>/api/v1/windows/{type}/{window_id}</td><td>GET</td><td>API key</td><td>One window, all services</td></tr><tr><td>/api/auth/token</td><td>POST</td><td>-</td><td>Admin JWT (username / password)</td></tr><tr><td>/api/lab/events</td><td>POST</td><td>-</td><td>Send your own events (delay, duplicate, malformed)</td></tr><tr><td>/api/lab/trace/{event_id}</td><td>GET</td><td>-</td><td>Journey of one event</td></tr><tr><td>/api/lab/topology · /processor · /status</td><td>GET</td><td>-</td><td>Kafka cluster, workers, health of all components</td></tr><tr><td>/api/lab/config</td><td>GET / PUT</td><td>JWT for PUT</td><td>Control-plane settings (Consul)</td></tr><tr><td>/api/lab/edge/run · /edge/runs/{id}</td><td>POST / GET</td><td>JWT for POST</td><td>Edge-case runs and their results</td></tr><tr><td>/ws/live · /ws/stream?topic=</td><td>WebSocket</td><td>-</td><td>Live window results / live Kafka tail</td></tr></tbody></table>
+<h2>Key settings (Consul <code>swma/config/…</code>)</h2>
+<table class=""><thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td>window/tumbling_size_s</td><td>60</td><td>Tumbling window length</td></tr><tr><td>window/sliding_size_s · sliding_slide_s</td><td>60 · 10</td><td>Sliding window length and step</td></tr><tr><td>window/allowed_lateness_s</td><td>10</td><td>Grace period after the watermark passes a window end</td></tr><tr><td>watermark/max_out_of_orderness_s</td><td>5</td><td>Watermark = newest event time minus this</td></tr><tr><td>watermark/idle_timeout_s</td><td>30</td><td>Quiet, caught-up partition follows the clock after this</td></tr><tr><td>trigger/emit_interval_s</td><td>2</td><td>Partial results for open windows</td></tr><tr><td>state/checkpoint_interval_s · s3_backup_interval_s</td><td>5 · 30</td><td>RocksDB checkpoint / S3 snapshot</td></tr><tr><td>scaling/min_workers · max_workers · scale_up_lag</td><td>2 · 4 · 400</td><td>Autoscaler policy</td></tr><tr><td>producer/rate_eps · producer/scenario</td><td>25 · normal</td><td>Simulated traffic</td></tr><tr><td>api/rate_limit_rps · rate_limit_burst</td><td>5 · 10</td><td>Public API token bucket</td></tr></tbody></table>
+<h2>Topics</h2>
+<table class=""><thead><tr><th>Topic</th><th>Partitions × RF</th><th>Content</th></tr></thead><tbody><tr><td>telemetry.events</td><td>4 × 3</td><td>raw events, key = service</td></tr><tr><td>telemetry.dlq</td><td>2 × 3</td><td>dead letters with reason, source offset and original payload</td></tr><tr><td>metrics.windows</td><td>4 × 3</td><td>every window result emitted by the processor</td></tr></tbody></table>
+</section></body></html>
