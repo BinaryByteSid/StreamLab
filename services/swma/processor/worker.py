@@ -301,7 +301,8 @@ class Worker:
         for e in emissions:
             M.EMISSIONS.labels(e["window_type"], e["status"]).inc()
             self.producer.produce(settings.TOPIC_METRICS, key=e["service"], value=json.dumps(e))
-            if e["status"] in ("closed", "updated"):
+            # Business gauges/alerts only for the real microservices, not edge-case test traffic.
+            if e["status"] in ("closed", "updated") and e["service"] in SERVICE_CATALOG:
                 lbl = (e["service"], e["window_type"])
                 if e["avg"] is not None:
                     M.W_AVG.labels(*lbl).set(e["avg"])

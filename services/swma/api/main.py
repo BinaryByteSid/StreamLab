@@ -14,7 +14,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 
 from swma.common import log as logsetup, settings
 
-from . import explore, lab, public, ws
+from . import edge, explore, lab, public, ws
 from .deps import C
 
 REQUESTS = Counter("swma_api_requests_total", "HTTP requests", ["method", "route", "status"])
@@ -75,3 +75,4 @@ app.include_router(lab.router)
 app.include_router(lab.alerts_router)
 app.include_router(explore.router)
 app.include_router(ws.router)
+app.include_router(edge.router)

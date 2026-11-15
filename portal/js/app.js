@@ -5,6 +5,7 @@ import './pages-main.js';
 import './experiments.js';
 import './pages-live.js';
 import './pages-ops.js';
+import './pages-edge.js';
 
 window.addEventListener('hashchange', () => { navigate(); $('#nav').classList.remove('open'); });
 $('#menu-btn').onclick = () => $('#nav').classList.toggle('open');
